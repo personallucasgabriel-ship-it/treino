@@ -451,7 +451,7 @@ function render(){
       <div class="cardio">${campo(`c${n}min`,"min",c.minutos ?? "","0")}${campo(`c${n}bpm`,"bpm",c.bpm ?? "","0")}</div>
       <div class="recado" id="rc-${n}-c" ${c.recado ? "" : "hidden"}><textarea id="m-${n}-c" maxlength="300" placeholder="Ex.: fiz na esteira; não consegui manter a média">${esc(c.recado || "")}</textarea><small>O seu treinador vê este recado na sua planilha.</small></div>
       <div class="acoes"><button class="btn${c.recado ? " tem" : ""}" type="button" data-recado="c">${c.recado ? "✎ Recado" : "✎ Recado para o treinador"}</button></div></div>`; }
-  if (d.exercicios.length) h += `<button class="grande" type="button" id="story">📸 Compartilhar no story</button>`;
+  if (d.exercicios.length) h += `<button class="grande" type="button" id="story"><svg class="ig" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.2" fill="currentColor"/></svg> Compartilhar no story</button>`;
   h += `<button class="grande sec" type="button" id="enviar">Ver registro da semana</button>`;
   h += `<button class="grande sec" type="button" id="verPlano">🗺 Ver o planejamento do ciclo</button>`;
   h += blocoAgenda();
@@ -539,63 +539,134 @@ function passo(){ const s = Math.max(0, Math.ceil((fim - Date.now())/1000)); $("
 $("mais").onclick = () => { fim = Math.max(fim, Date.now()) + 15000; T.classList.remove("fim"); clearInterval(tick); tick = setInterval(passo, 250); passo(); manterTela(true); };
 $("parar").onclick = () => { clearInterval(tick); tick = null; T.hidden = true; manterTela(false); };
 
-// ---------- cartão para o story (1080 × 1920, com a logo) ----------
+// ---------- figurinha para o story (PNG sem fundo, para colar em cima da foto do aluno) ----------
+// No iPhone o compartilhamento só abre se for chamado direto pelo toque. Por isso as imagens ficam prontas
+// antes, numa janela com as opções, e os botões "Copiar" e "Compartilhar" usam a imagem já pronta.
+const BOTAO_STORY = '<svg class="ig" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.2" fill="currentColor"/></svg> Compartilhar no story';
 async function compartilharStory(d){
-  if (!diaComAlgo(d)){ aviso("Anote pelo menos uma série para montar o cartão."); return; }
-  const b = $("story"); b.disabled = true; b.textContent = "Montando a imagem…";
+  const b = $("story"); b.disabled = true; b.textContent = "Montando as figurinhas…";
   try {
-    const blob = await desenharStory(d);
-    const arq = new File([blob], `treino-${d.treino || "cardio"}-semana-${semanaN}.png`, {type: "image/png"});
-    if (navigator.canShare && navigator.canShare({files: [arq]})) { try { await navigator.share({files: [arq]}); } catch(e){} }
-    else mostrarImagem(blob);
+    const ops = await figurinhas(d);
+    if (!ops.length) throw new Error("vazio");
+    mostrarFigurinhas(ops, d);
   } catch(e){ aviso("Não consegui montar a imagem agora."); }
-  finally { b.disabled = false; b.textContent = "📸 Compartilhar no story"; }
+  finally { b.disabled = false; b.innerHTML = BOTAO_STORY; }
 }
-function mostrarImagem(blob){
-  const url = URL.createObjectURL(blob), box = document.createElement("div");
-  box.className = "imgbox"; box.innerHTML = `<div><img src="${url}" alt="Cartão do treino para o story"><div class="acoes"><a class="btn amarelo" href="${url}" download="treino.png">Salvar a imagem</a><button class="btn" type="button">Fechar</button></div><p class="nota">No iPhone, toque e segure a imagem e escolha "Salvar na Fotos".</p></div>`;
-  box.querySelector("button").onclick = () => { box.remove(); URL.revokeObjectURL(url); };
-  document.body.appendChild(box);
+async function figurinhas(d){
+  try { await Promise.all(["900 150px Archivo", "800 60px Archivo", "600 34px Inter"].map(f => document.fonts.load(f))); } catch(e){}
+  let logo = null; try { logo = await carregarImg("icons/logo-horizontal.svg"); } catch(e){}
+  // melhor série de cada exercício com recorde hoje
+  const recs = [];
+  d.exercicios.forEach((ex,i) => { const k = i+1; if (!recorde(d,k,ex)) return; let m = null;
+    for (let s = 1; s <= ex.series; s++){ const r = reps(d,k,s), q = kg(d,k,s) || 0; if (r === "" || !(r > 0)) continue;
+      if (!m || q > m.kg || (q === m.kg && r > m.reps)) m = {kg: q, reps: r}; }
+    if (m) recs.push({nome: ex.nome.trim(), ...m}); });
+  const ops = [{nome: "Marca", desenho: g => figMarca(g, logo)}];
+  const feitos = d.exercicios.filter((ex,i) => { for (let s = 1; s <= ex.series; s++) if (reps(d,i+1,s) !== "") return true; return false; }).map(ex => ex.nome.trim());
+  if (feitos.length) ops.push({nome: "Exercícios", desenho: g => figLista(g, logo, d.treino ? `TREINO ${d.treino}` : "TREINO DE HOJE", feitos)});
+  const dias = (SEM && SEM.dias || []).map(x => ({dia: x.dia, ok: treinouNoDia(x)}));
+  if (dias.length) ops.push({nome: "Frequência", desenho: g => figFrequencia(g, logo, dias)});
+  if (recs.length) ops.push({nome: "Recorde", desenho: g => figRecorde(g, logo, recs[0], recs.length)});
+  const prontas = [];
+  for (const o of ops){ const blob = await desenharFig(o.desenho); if (blob) prontas.push({nome: o.nome, blob, url: URL.createObjectURL(blob)}); }
+  return prontas;
+}
+// desenha numa tela grande e transparente e recorta só o que foi desenhado (a figurinha fica do tamanho certo)
+async function desenharFig(fn){
+  const W = 1080, H = 1300, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
+  g.textAlign = "center"; g.textBaseline = "alphabetic";
+  g.shadowColor = "rgba(0,0,0,.55)"; g.shadowBlur = 28; g.shadowOffsetY = 4;   // sombra suave: lê em foto clara e escura
+  fn(g);
+  const px = g.getImageData(0, 0, W, H).data; let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (px[(y*W + x)*4 + 3] > 6){ if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return null;
+  const m = 24; x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m);
+  const o = document.createElement("canvas"); o.width = x1 - x0; o.height = y1 - y0;
+  o.getContext("2d").drawImage(c, x0, y0, o.width, o.height, 0, 0, o.width, o.height);
+  return await new Promise(ok => o.toBlob(ok, "image/png"));
+}
+function espacado(g, txt, cx, y, esp){ // texto com letras afastadas, centralizado em cx
+  const ls = [...txt], ws = ls.map(l => g.measureText(l).width), tot = ws.reduce((a,b) => a+b, 0) + esp * (ls.length - 1);
+  let x = cx - tot / 2; const al = g.textAlign; g.textAlign = "left";
+  ls.forEach((l,i) => { g.fillText(l, x, y); x += ws[i] + esp; }); g.textAlign = al;
+}
+function marcaFig(g, logo, y, largura){ // "CONSULTORIA" em amarelo e a logo embaixo; devolve onde terminou
+  g.fillStyle = "#FFD60A"; g.font = `600 ${Math.round(largura * .042)}px Inter, Arial`; espacado(g, "CONSULTORIA", 540, y, largura * .022);
+  if (!logo) { g.fillStyle = "#FAFAFA"; g.font = `800 ${Math.round(largura * .09)}px Archivo, Arial`; g.fillText("LUCAS GABRIEL", 540, y + largura * .14); return y + largura * .16; }
+  const lh = largura * (logo.height || 1200) / (logo.width || 5790); g.drawImage(logo, 540 - largura / 2 - largura * .02, y + largura * .03, largura, lh);
+  return y + largura * .03 + lh;
+}
+function figMarca(g, logo){ marcaFig(g, logo, 120, 900); }
+function treinouNoDia(x){ // anotou alguma série ou o aeróbico naquele dia da semana
+  if (x.exercicios.some((ex,i) => { for (let s = 1; s <= ex.series; s++) if (reps(x,i+1,s) !== "") return true; return false; })) return true;
+  const c = P.cardio[semanaN+"|"+x.dia]; return !!(c && c.minutos !== "" && c.minutos != null); }
+function figLista(g, logo, titulo, nomes){
+  g.fillStyle = "#FFD60A"; g.font = "600 40px Inter, Arial"; espacado(g, titulo, 540, 70, 16);
+  const mostra = nomes.slice(0, 8), fs = 46; g.font = `600 ${fs}px Inter, Arial`;
+  const curto = n => { let t = n; while (g.measureText(t).width > 820 && t.length > 4) t = t.slice(0, -2).trimEnd() + "…"; return t; };
+  const linhas = mostra.map(curto), larg = Math.max(...linhas.map(t => g.measureText(t).width)) + 56, x = 540 - larg / 2;
+  let y = 170; g.textAlign = "left";
+  linhas.forEach(t => { g.fillStyle = "#FFD60A"; g.beginPath(); g.arc(x + 12, y - fs * .34, 9, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#FAFAFA"; g.fillText(t, x + 56, y); y += 76; });
+  if (nomes.length > 8){ g.fillStyle = "rgba(250,250,250,.7)"; g.font = "600 36px Inter, Arial"; g.fillText(`+ ${nomes.length - 8} exercícios`, x + 56, y); y += 70; }
+  g.textAlign = "center";
+  g.fillStyle = "rgba(250,250,250,.6)"; g.fillRect(440, y + 4, 200, 3);
+  marcaFig(g, logo, y + 100, 640);
+}
+function figFrequencia(g, logo, dias){
+  const n = dias.filter(x => x.ok).length, tot = dias.length;
+  g.fillStyle = "#FFD60A"; g.font = "600 40px Inter, Arial"; espacado(g, "FREQUÊNCIA DA SEMANA", 540, 70, 14);
+  g.font = "900 210px Archivo, Arial"; const a = String(n), b = `/${tot}`, wa = g.measureText(a).width;
+  g.font = "800 100px Archivo, Arial"; const wb = g.measureText(b).width, x0 = 540 - (wa + wb + 10) / 2;
+  g.textAlign = "left"; g.fillStyle = "#FAFAFA"; g.font = "900 210px Archivo, Arial"; g.fillText(a, x0, 270);
+  g.fillStyle = "rgba(250,250,250,.75)"; g.font = "800 100px Archivo, Arial"; g.fillText(b, x0 + wa + 10, 270); g.textAlign = "center";
+  // uma bolinha por dia de treino: amarela = treinou
+  const r = 46, esp = 26, larg = tot * 2 * r + (tot - 1) * esp; let cx = 540 - larg / 2 + r;
+  const ini = {DOM:"D",SEG:"S",TER:"T",QUA:"Q",QUI:"Q",SEX:"S",SAB:"S"};
+  dias.forEach(x => { g.beginPath(); g.arc(cx, 380, r, 0, Math.PI * 2);
+    if (x.ok){ g.fillStyle = "#FFD60A"; g.fill(); } else { g.lineWidth = 5; g.strokeStyle = "rgba(250,250,250,.8)"; g.stroke(); }
+    g.fillStyle = x.ok ? "#0B0B0B" : "#FAFAFA"; g.font = "800 40px Archivo, Arial"; g.textBaseline = "middle"; g.fillText(ini[x.dia] || "", cx, 382); g.textBaseline = "alphabetic";
+    cx += 2 * r + esp; });
+  marcaFig(g, logo, 540, 640);
+}
+function figRecorde(g, logo, r, qtd){
+  g.fillStyle = "#FFD60A"; g.font = "600 40px Inter, Arial"; espacado(g, qtd > 1 ? `${qtd} RECORDES HOJE` : "NOVO RECORDE", 540, 90, 16);
+  g.fillStyle = "#FAFAFA"; let fs = 64, nome = r.nome.toUpperCase(); g.font = `800 ${fs}px Archivo, Arial`;
+  while (g.measureText(nome).width > 960 && fs > 44){ fs -= 2; g.font = `800 ${fs}px Archivo, Arial`; }
+  while (g.measureText(nome).width > 960 && nome.length > 4) nome = nome.slice(0, -2).trimEnd() + "…";
+  g.fillText(nome, 540, 190);
+  g.fillStyle = "#FFD60A"; g.font = "900 140px Archivo, Arial"; g.fillText(r.kg ? `${fmt(r.kg)} KG × ${r.reps}` : `${r.reps} REPS`, 540, 350);
+  g.fillStyle = "rgba(250,250,250,.6)"; g.fillRect(440, 410, 200, 3);
+  marcaFig(g, logo, 500, 640);
+}
+function mostrarFigurinhas(ops, d){
+  let sel = 0;
+  const box = document.createElement("div"); box.className = "imgbox fig";
+  box.innerHTML = `<div>
+    <h3>Story do Instagram</h3>
+    <div class="fig-palco"><img alt="Prévia da figurinha"></div>
+    <div class="fig-ops">${ops.map((o,i) => `<button type="button" data-i="${i}" aria-pressed="${i === 0}"><img src="${o.url}" alt=""><span>${esc(o.nome)}</span></button>`).join("")}</div>
+    <div class="acoes"><button class="btn amarelo" type="button" id="figCopiar">Copiar figurinha</button><button class="btn" type="button" id="figComp">Compartilhar ou salvar</button></div>
+    <p class="nota">Sem fundo: fica por cima da sua foto. <b>Copiou?</b> Abra o story no Instagram, escolha a foto e o Instagram oferece colar a figurinha (ou segure a tela e toque em Colar).</p>
+    <button class="btn" type="button" id="figFechar">Fechar</button></div>`;
+  const palco = box.querySelector(".fig-palco img");
+  const escolher = i => { sel = i; palco.src = ops[i].url; box.querySelectorAll(".fig-ops button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.i === i))); };
+  box.querySelectorAll(".fig-ops button").forEach(b => b.onclick = () => escolher(+b.dataset.i));
+  const arquivo = () => new File([ops[sel].blob], `figurinha-${ops[sel].nome.toLowerCase().replace(/\s+/g, "-")}.png`, {type: "image/png"});
+  box.querySelector("#figCopiar").onclick = async e => {
+    try { await navigator.clipboard.write([new ClipboardItem({"image/png": ops[sel].blob})]); e.target.textContent = "Copiada ✓"; setTimeout(() => e.target.textContent = "Copiar figurinha", 2500); }
+    catch(err){ aviso("Este celular não deixou copiar. Use “Compartilhar ou salvar”."); }
+  };
+  box.querySelector("#figComp").onclick = async () => {
+    const f = arquivo();
+    if (navigator.canShare && navigator.canShare({files: [f]})){ try { await navigator.share({files: [f]}); return; } catch(err){ if (err && err.name === "AbortError") return; } }
+    const a = document.createElement("a"); a.href = ops[sel].url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+    aviso("Se não baixou: toque e segure a figurinha e escolha “Salvar na Fotos”.");
+  };
+  box.querySelector("#figFechar").onclick = () => { box.remove(); ops.forEach(o => URL.revokeObjectURL(o.url)); };
+  document.body.appendChild(box); escolher(0);
 }
 function carregarImg(src){ return new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = falha; i.src = src; }); }
-async function desenharStory(d){
-  try { await Promise.all(["900 120px Archivo", "800 44px Archivo", "600 40px Inter", "500 40px 'JetBrains Mono'"].map(f => document.fonts.load(f))); } catch(e){}
-  const W = 1080, H = 1920, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
-  g.fillStyle = "#0B0B0B"; g.fillRect(0, 0, W, H);
-  g.fillStyle = "#FFD60A"; g.fillRect(0, 0, W, 14); g.fillRect(0, H - 14, W, 14);
-  try { const logo = await carregarImg("icons/logo-horizontal.svg"); const lw = 560, lh = lw * (logo.height || 40) / (logo.width || 193); g.drawImage(logo, 90, 120, lw, lh); } catch(e){}
-  const dt = dataDoDia(semanaN, d.dia);
-  g.fillStyle = "#FFD60A"; g.font = "800 44px Archivo, Arial"; g.fillText(`SEMANA ${semanaN} · ${(NOMES[d.dia] || "").toUpperCase()}${dt ? " · " + dd(dt) : ""}`, 90, 330);
-  g.fillStyle = "#FAFAFA"; g.font = "900 150px Archivo, Arial"; g.fillText(d.treino ? `TREINO ${d.treino}` : "CARDIO", 84, 480);
-  g.font = "900 96px Archivo, Arial"; g.fillText("CONCLUÍDO ✓", 88, 590);
-  // números do dia
-  let series = 0, volume = 0, recs = [];
-  const linhas = d.exercicios.map((ex,i) => { const k = i+1; let melhor = null;
-    for (let s = 1; s <= ex.series; s++){ const r = reps(d,k,s), q = kg(d,k,s); if (r === "" || !(r > 0)) continue; series++; volume += r * (q || 0);
-      if (!melhor || (q || 0) > melhor.kg || ((q || 0) === melhor.kg && r > melhor.reps)) melhor = {kg: q || 0, reps: r}; }
-    const rec = recorde(d,k,ex); if (rec) recs.push(ex.nome);
-    return {nome: ex.nome, melhor, rec: !!rec}; }).filter(l => l.melhor);
-  const caixa = (x, rot, val) => { g.fillStyle = "#161616"; g.fillRect(x, 660, 290, 170); g.fillStyle = "#FFD60A"; g.font = "500 64px 'JetBrains Mono', monospace"; g.fillText(val, x + 28, 755); g.fillStyle = "#A3A196"; g.font = "600 30px Inter, Arial"; g.fillText(rot, x + 28, 805); };
-  caixa(90, linhas.length === 1 ? "exercício" : "exercícios", String(linhas.length)); caixa(395, series === 1 ? "série" : "séries", String(series)); caixa(700, "kg levantados", volume >= 10000 ? Math.round(volume/1000) + " mil" : Math.round(volume).toLocaleString("pt-BR"));
-  let y = 930; g.textBaseline = "alphabetic";
-  linhas.slice(0, 9).forEach(l => {
-    g.fillStyle = l.rec ? "#FFD60A" : "#FAFAFA"; g.font = "600 40px Inter, Arial";
-    let nome = (l.rec ? "🏆 " : "") + l.nome; while (g.measureText(nome).width > 600 && nome.length > 4) nome = nome.slice(0, -2).trimEnd() + "…";
-    g.fillText(nome, 90, y);
-    g.font = "500 40px 'JetBrains Mono', monospace"; g.textAlign = "right"; g.fillStyle = "#FAFAFA";
-    g.fillText(l.melhor.kg ? `${fmt(l.melhor.kg)} kg × ${l.melhor.reps}` : `${l.melhor.reps} reps`, W - 90, y); g.textAlign = "left";
-    g.fillStyle = "#2A2A27"; g.fillRect(90, y + 30, W - 180, 2); y += 92;
-  });
-  if (linhas.length > 9){ g.fillStyle = "#A3A196"; g.font = "600 34px Inter, Arial"; g.fillText(`+ ${linhas.length - 9} exercícios`, 90, y); y += 70; }
-  if (recs.length){ g.fillStyle = "#FFD60A"; g.fillRect(90, Math.min(y + 10, 1640), W - 180, 110); g.fillStyle = "#0B0B0B"; g.font = "800 44px Archivo, Arial";
-    g.fillText(recs.length === 1 ? "🏆 1 RECORDE HOJE" : `🏆 ${recs.length} RECORDES HOJE`, 130, Math.min(y + 10, 1640) + 72); }
-  // rodapé: "Consultoria •" e a logo
-  g.fillStyle = "#A3A196"; g.font = "600 34px Inter, Arial"; g.textBaseline = "middle";
-  const rot = "Consultoria  •  "; g.fillText(rot, 90, H - 110); g.textBaseline = "alphabetic";
-  try { const logo = await carregarImg("icons/logo-horizontal.svg"); const lw = 330, lh = lw * (logo.height || 40) / (logo.width || 193);
-    g.drawImage(logo, 90 + g.measureText(rot).width, H - 110 - lh / 2, lw, lh); } catch(e){}
-  return await new Promise(ok => c.toBlob(ok, "image/png"));
-}
 
 // ---------- lembrete dos treinos na agenda do celular ----------
 const BYDAY = {SEG:"MO",TER:"TU",QUA:"WE",QUI:"TH",SEX:"FR",SAB:"SA",DOM:"SU"};
