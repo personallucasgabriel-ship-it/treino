@@ -11,6 +11,7 @@ const OFFSET = {SEG:0,TER:1,QUA:2,QUI:3,SEX:4,SAB:5,DOM:6};   // a semana do cic
 const SEGUIDOS = {BISET:2, TRISET:3, "GIANT SET":99};
 const COL_RECADO = 14;   // coluna O das abas Registro (leitura A5:P157)
 const COL_DICA = 15;     // coluna P: dica do treinador (escrita pelo app do treinador)
+const COL_ESFORCO = 16;  // coluna Q: repetições que ainda sobravam na última série (0 a 4; 4 = 4 ou mais)
 const FORM_FOTOS = "https://forms.gle/Jc9hwKyR9xHa6WP17";
 // Cardio da semana: qualquer texto que não seja o do modelo da planilha ("min, manter uma média de bpm")
 const cardioValido = t => !!t && (/\d/.test(t) || !/^min,?\s*manter uma m[ée]dia de\s*bpm\.?$/i.test(t.replace(/\s+/g, " ").trim()));
@@ -148,7 +149,8 @@ function aplicarOp(op){
     const reg = P.reg[op.aba] || (P.reg[op.aba] = []);
     op.linhas.forEach((row,i) => { const k = linhaReg(op.semana, i+1); const atual = reg[k] || (reg[k] = []);
       for (let c = 0; c < 10; c++) atual[c+1] = row[c] === "" ? "" : fmt(row[c]);
-      if (op.recados) atual[COL_RECADO] = op.recados[i] || ""; });
+      if (op.recados) atual[COL_RECADO] = op.recados[i] || "";
+      if (op.esforco) atual[COL_ESFORCO] = op.esforco[i] === "" || op.esforco[i] == null ? "" : String(op.esforco[i]); });
   } else if (op.tipo === "cardio"){
     P.cardio[op.semana+"|"+op.dia] = {minutos: op.minutos, bpm: op.bpm, recado: op.recado};
   }
@@ -197,6 +199,12 @@ function exOk(d, k, ex){ if (!ex.series) return false; for (let s = 1; s <= ex.s
 function diaFeito(n){ const d = SEM.dias[n]; if (!d) return false;
   if (d.exercicios.length) return d.exercicios.every((ex,i) => exOk(d,i+1,ex));
   const c = P.cardio[semanaN+"|"+d.dia]; return !!(c && c.minutos !== ""); }
+function esforcoEx(d, k){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_ESFORCO)); return v === "" ? "" : Math.max(0, Math.min(4, Math.round(v))); }
+// Esforço da série (repetições na reserva): escala validada por Zourdos e cols. 2016 (doi:10.1519/JSC.0000000000001049)
+function blocoEsforco(id, k, val){
+  return `<div class="esforco" role="group" aria-label="Na última série, quantas repetições ainda sobravam?"><span>Na última série, quantas reps ainda sobravam?</span>
+    <div>${[0,1,2,3,4].map(v => `<button type="button" data-esf="${id}" data-k="${k}" data-v="${v}" aria-pressed="${val === v}">${v === 0 ? "0 · no limite" : v === 4 ? "4 ou +" : v}</button>`).join("")}</div></div>`;
+}
 function diaComAlgo(d){ return d.exercicios.some((ex,i) => { for (let s = 1; s <= ex.series; s++) if (reps(d,i+1,s) !== "") return true; return false; }); }
 
 // histórico do exercício (qualquer treino, semanas antes de N) ----------
@@ -279,7 +287,8 @@ function opTreino(d){
   const linhas = d.exercicios.map((ex,i) => { const row = []; for (let s = 1; s <= 5; s++){
     row.push(s <= ex.series ? reps(d,i+1,s) : ""); row.push(s <= ex.series ? kg(d,i+1,s) : ""); } return row; });
   const recados = d.exercicios.map((ex,i) => recadoEx(d,i+1));
-  return {tipo: "treino", aba: d.aba, semana: semanaN, linhas, recados};
+  const esforco = d.exercicios.map((ex,i) => esforcoEx(d,i+1));
+  return {tipo: "treino", aba: d.aba, semana: semanaN, linhas, recados, esforco};
 }
 function opCardio(d){
   const c = P.cardio[semanaN+"|"+d.dia] || {}; const dt = dataDoDia(semanaN, d.dia);
@@ -429,6 +438,7 @@ function render(){
       ${dica ? `<div class="dica"><b>Dica do treinador${dica.semana !== semanaN ? ` (semana ${dica.semana})` : ""}:</b> ${esc(dica.texto)}</div>` : ""}
       <div class="recorde" id="rec-${n}-${k}" ${rec ? "" : "hidden"}>🏆 ${rec ? esc(rec.texto) : ""}</div>
       <div class="series">${s}</div>
+      ${blocoEsforco(n, k, esforcoEx(d,k))}
       <div class="recado" id="rc-${n}-${k}" ${msg ? "" : "hidden"}><textarea id="m-${n}-${k}" maxlength="300" placeholder="Ex.: máquina ocupada, troquei pelo halter; senti o ombro na 3ª série">${esc(msg)}</textarea><small>O seu treinador vê este recado na sua planilha.</small></div>
       <div class="acoes">
         ${ant ? `<button class="btn" type="button" data-repetir="${k}">Mesma carga da semana ${ant.semana}</button>` : ""}
@@ -441,8 +451,19 @@ function render(){
       <div class="cardio">${campo(`c${n}min`,"min",c.minutos ?? "","0")}${campo(`c${n}bpm`,"bpm",c.bpm ?? "","0")}</div>
       <div class="recado" id="rc-${n}-c" ${c.recado ? "" : "hidden"}><textarea id="m-${n}-c" maxlength="300" placeholder="Ex.: fiz na esteira; não consegui manter a média">${esc(c.recado || "")}</textarea><small>O seu treinador vê este recado na sua planilha.</small></div>
       <div class="acoes"><button class="btn${c.recado ? " tem" : ""}" type="button" data-recado="c">${c.recado ? "✎ Recado" : "✎ Recado para o treinador"}</button></div></div>`; }
+  if (d.exercicios.length) h += `<button class="grande" type="button" id="story">📸 Compartilhar no story</button>`;
   h += `<button class="grande sec" type="button" id="enviar">Ver registro da semana</button>`;
+  h += blocoAgenda();
   tela.innerHTML = h; contagem();
+  ligarAgenda();
+  if ($("story")) $("story").onclick = () => compartilharStory(d);
+  tela.querySelectorAll("[data-esf]").forEach(b => b.onclick = () => {
+    const k = +b.dataset.k, v = +b.dataset.v, ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
+    const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
+    const novo = esforcoEx(d,k) === v ? "" : v; row[COL_ESFORCO] = novo === "" ? "" : String(novo);
+    b.parentNode.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(+x.dataset.v === novo)));
+    enfileirar(opTreino(d));
+  });
 
   tela.querySelectorAll("input").forEach(inp => {
     inp.addEventListener("input", () => digitou(inp));
@@ -515,6 +536,96 @@ function passo(){ const s = Math.max(0, Math.ceil((fim - Date.now())/1000)); $("
   if (s === 0){ clearInterval(tick); tick = null; T.classList.add("fim"); $("trotulo").textContent = "Bora, próxima série!"; bip(); setTimeout(() => { if (!tick) manterTela(false); }, 60000); } }
 $("mais").onclick = () => { fim = Math.max(fim, Date.now()) + 15000; T.classList.remove("fim"); clearInterval(tick); tick = setInterval(passo, 250); passo(); manterTela(true); };
 $("parar").onclick = () => { clearInterval(tick); tick = null; T.hidden = true; manterTela(false); };
+
+// ---------- cartão para o story (1080 × 1920, com a logo) ----------
+async function compartilharStory(d){
+  if (!diaComAlgo(d)){ aviso("Anote pelo menos uma série para montar o cartão."); return; }
+  const b = $("story"); b.disabled = true; b.textContent = "Montando a imagem…";
+  try {
+    const blob = await desenharStory(d);
+    const arq = new File([blob], `treino-${d.treino || "cardio"}-semana-${semanaN}.png`, {type: "image/png"});
+    if (navigator.canShare && navigator.canShare({files: [arq]})) { try { await navigator.share({files: [arq]}); } catch(e){} }
+    else mostrarImagem(blob);
+  } catch(e){ aviso("Não consegui montar a imagem agora."); }
+  finally { b.disabled = false; b.textContent = "📸 Compartilhar no story"; }
+}
+function mostrarImagem(blob){
+  const url = URL.createObjectURL(blob), box = document.createElement("div");
+  box.className = "imgbox"; box.innerHTML = `<div><img src="${url}" alt="Cartão do treino para o story"><div class="acoes"><a class="btn amarelo" href="${url}" download="treino.png">Salvar a imagem</a><button class="btn" type="button">Fechar</button></div><p class="nota">No iPhone, toque e segure a imagem e escolha "Salvar na Fotos".</p></div>`;
+  box.querySelector("button").onclick = () => { box.remove(); URL.revokeObjectURL(url); };
+  document.body.appendChild(box);
+}
+function carregarImg(src){ return new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = falha; i.src = src; }); }
+async function desenharStory(d){
+  try { await Promise.all(["900 120px Archivo", "800 44px Archivo", "600 40px Inter", "500 40px 'JetBrains Mono'"].map(f => document.fonts.load(f))); } catch(e){}
+  const W = 1080, H = 1920, c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
+  g.fillStyle = "#0B0B0B"; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#FFD60A"; g.fillRect(0, 0, W, 14); g.fillRect(0, H - 14, W, 14);
+  try { const logo = await carregarImg("icons/logo-horizontal.svg"); const lw = 560, lh = lw * (logo.height || 40) / (logo.width || 193); g.drawImage(logo, 90, 120, lw, lh); } catch(e){}
+  const dt = dataDoDia(semanaN, d.dia);
+  g.fillStyle = "#FFD60A"; g.font = "800 44px Archivo, Arial"; g.fillText(`SEMANA ${semanaN} · ${(NOMES[d.dia] || "").toUpperCase()}${dt ? " · " + dd(dt) : ""}`, 90, 330);
+  g.fillStyle = "#FAFAFA"; g.font = "900 150px Archivo, Arial"; g.fillText(d.treino ? `TREINO ${d.treino}` : "CARDIO", 84, 480);
+  g.font = "900 96px Archivo, Arial"; g.fillText("CONCLUÍDO ✓", 88, 590);
+  // números do dia
+  let series = 0, volume = 0, recs = [];
+  const linhas = d.exercicios.map((ex,i) => { const k = i+1; let melhor = null;
+    for (let s = 1; s <= ex.series; s++){ const r = reps(d,k,s), q = kg(d,k,s); if (r === "" || !(r > 0)) continue; series++; volume += r * (q || 0);
+      if (!melhor || (q || 0) > melhor.kg || ((q || 0) === melhor.kg && r > melhor.reps)) melhor = {kg: q || 0, reps: r}; }
+    const rec = recorde(d,k,ex); if (rec) recs.push(ex.nome);
+    return {nome: ex.nome, melhor, rec: !!rec}; }).filter(l => l.melhor);
+  const caixa = (x, rot, val) => { g.fillStyle = "#161616"; g.fillRect(x, 660, 290, 170); g.fillStyle = "#FFD60A"; g.font = "500 64px 'JetBrains Mono', monospace"; g.fillText(val, x + 28, 755); g.fillStyle = "#A3A196"; g.font = "600 30px Inter, Arial"; g.fillText(rot, x + 28, 805); };
+  caixa(90, linhas.length === 1 ? "exercício" : "exercícios", String(linhas.length)); caixa(395, series === 1 ? "série" : "séries", String(series)); caixa(700, "kg levantados", volume >= 10000 ? Math.round(volume/1000) + " mil" : Math.round(volume).toLocaleString("pt-BR"));
+  let y = 930; g.textBaseline = "alphabetic";
+  linhas.slice(0, 9).forEach(l => {
+    g.fillStyle = l.rec ? "#FFD60A" : "#FAFAFA"; g.font = "600 40px Inter, Arial";
+    let nome = (l.rec ? "🏆 " : "") + l.nome; while (g.measureText(nome).width > 600 && nome.length > 4) nome = nome.slice(0, -2).trimEnd() + "…";
+    g.fillText(nome, 90, y);
+    g.font = "500 40px 'JetBrains Mono', monospace"; g.textAlign = "right"; g.fillStyle = "#FAFAFA";
+    g.fillText(l.melhor.kg ? `${fmt(l.melhor.kg)} kg × ${l.melhor.reps}` : `${l.melhor.reps} reps`, W - 90, y); g.textAlign = "left";
+    g.fillStyle = "#2A2A27"; g.fillRect(90, y + 30, W - 180, 2); y += 92;
+  });
+  if (linhas.length > 9){ g.fillStyle = "#A3A196"; g.font = "600 34px Inter, Arial"; g.fillText(`+ ${linhas.length - 9} exercícios`, 90, y); y += 70; }
+  if (recs.length){ g.fillStyle = "#FFD60A"; g.fillRect(90, Math.min(y + 10, 1640), W - 180, 110); g.fillStyle = "#0B0B0B"; g.font = "800 44px Archivo, Arial";
+    g.fillText(recs.length === 1 ? "🏆 1 RECORDE HOJE" : `🏆 ${recs.length} RECORDES HOJE`, 130, Math.min(y + 10, 1640) + 72); }
+  g.fillStyle = "#A3A196"; g.font = "600 32px Inter, Arial"; g.fillText("Treino com acompanhamento · Lucas Gabriel Treinador", 90, H - 90);
+  return await new Promise(ok => c.toBlob(ok, "image/png"));
+}
+
+// ---------- lembrete dos treinos na agenda do celular ----------
+const BYDAY = {SEG:"MO",TER:"TU",QUA:"WE",QUI:"TH",SEX:"FR",SAB:"SA",DOM:"SU"};
+function blocoAgenda(){
+  const dias = ORDEM.filter(d => P.periodo[d]); if (!dias.length || !P.ini) return "";
+  const hora = ler("agenda-hora") || "18:00";
+  return `<details class="como agenda"><summary>📅 Colocar os treinos na agenda do celular</summary>
+    <p>Um lembrete em cada dia de treino (${dias.map(d => NOMES[d].toLowerCase()).join(", ")}), 30 minutos antes, até o fim do ciclo.</p>
+    <label class="nota" for="agHora">Horário em que você costuma treinar</label>
+    <div class="campo" style="max-width:160px"><input id="agHora" type="time" value="${esc(hora)}"></div>
+    <div class="acoes"><a class="btn amarelo" id="agGoogle" target="_blank" rel="noopener">Google Agenda (Android)</a><a class="btn" id="agIcs">iPhone e outros</a></div>
+    <p class="nota">Mudou o seu horário? É só fazer de novo com o horário novo (e apagar o lembrete antigo da agenda).</p></details>`;
+}
+function ligarAgenda(){
+  const inp = $("agHora"); if (!inp) return;
+  const atualizar = () => {
+    const [hh, mm] = (inp.value || "18:00").split(":").map(Number); guardar("agenda-hora", inp.value || "18:00");
+    const dias = ORDEM.filter(d => P.periodo[d]), hoje = hojeZero();
+    let ini = new Date(Math.max(hoje, P.ini)); while (!dias.includes(SEMANA_JS[ini.getDay()])) ini.setDate(ini.getDate() + 1);
+    const fimCiclo = P.fim || new Date(P.ini.getTime() + 12*7*864e5);
+    const p2 = n => String(n).padStart(2, "0"), dia = x => `${x.getFullYear()}${p2(x.getMonth()+1)}${p2(x.getDate())}`;
+    const t0 = `${dia(ini)}T${p2(hh)}${p2(mm)}00`, fimH = new Date(ini); fimH.setHours(hh + 1, mm);
+    const t1 = `${dia(fimH)}T${p2(fimH.getHours())}${p2(fimH.getMinutes())}00`;
+    const regra = `RRULE:FREQ=WEEKLY;BYDAY=${dias.map(d => BYDAY[d]).join(",")};UNTIL=${dia(fimCiclo)}T235959`;
+    const titulo = "Treino 💪", texto = `Abra o app do treino: ${location.origin}${location.pathname}`;
+    $("agGoogle").href = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(titulo) + "&details=" + encodeURIComponent(texto)
+      + "&dates=" + t0 + "/" + t1 + "&ctz=America/Sao_Paulo&recur=" + encodeURIComponent(regra.replace(/T235959$/, ""));
+    const ics = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Lucas Gabriel Treinador//Treino//PT","BEGIN:VEVENT",
+      `UID:treino-${dia(ini)}-${Date.now()}@lucasgabriel`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}Z`,
+      `DTSTART:${t0}`, `DTEND:${t1}`, regra, `SUMMARY:${titulo}`, `DESCRIPTION:${texto}`,
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:Hora do treino","TRIGGER:-PT30M","END:VALARM","END:VEVENT","END:VCALENDAR"].join("\r\n");
+    $("agIcs").href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
+    $("agIcs").setAttribute("download", "treinos.ics");
+  };
+  inp.addEventListener("change", atualizar); atualizar();
+}
 
 function mostrarRegistro(){
   let t = `${P.nome} · Semana ${SEM.semana} (${SEM.faixa} reps)\n`;

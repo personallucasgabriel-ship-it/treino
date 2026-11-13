@@ -11,6 +11,7 @@ const NOMES = {DOM:"Domingo",SEG:"Segunda",TER:"Terça",QUA:"Quarta",QUI:"Quinta
 const OFFSET = {SEG:0,TER:1,QUA:2,QUI:3,SEX:4,SAB:5,DOM:6};
 const SEGUIDOS = {BISET:2, TRISET:3, "GIANT SET":99};
 const COL_RECADO = 14;
+const COL_ESFORCO = 16;   // coluna Q: repetições que ainda sobravam na última série (0 a 4)
 const COL_DICA = 15;   // coluna P das abas Registro: dica do treinador (o aluno vê no app dele)
 const FORM_FOTOS = "https://forms.gle/Jc9hwKyR9xHa6WP17";
 const cardioValido = t => !!t && (/\d/.test(t) || !/^min,?\s*manter uma m[ée]dia de\s*bpm\.?$/i.test(t.replace(/\s+/g, " ").trim()));
@@ -521,7 +522,8 @@ function aplicarOp(op){
   if (op.tipo === "treino"){
     const reg = P.reg[op.aba] || (P.reg[op.aba] = []);
     op.linhas.forEach((row,i) => { const k = linhaReg(op.semana, i+1); const at = reg[k] || (reg[k] = []);
-      for (let c = 0; c < 10; c++) at[c+1] = row[c] === "" ? "" : fmt(row[c]); });
+      for (let c = 0; c < 10; c++) at[c+1] = row[c] === "" ? "" : fmt(row[c]);
+      if (op.esforco) at[COL_ESFORCO] = op.esforco[i] === "" || op.esforco[i] == null ? "" : String(op.esforco[i]); });
   } else if (op.tipo === "dica"){
     const reg = P.reg[op.aba] || (P.reg[op.aba] = []);
     op.dicas.forEach((t,i) => { const k = linhaReg(op.semana, i+1); (reg[k] || (reg[k] = []))[COL_DICA] = t; });
@@ -646,6 +648,7 @@ function renderRegistro(){
     h += `<article class="ex${exOk(d,k,ex) ? " ok" : ""}" id="ex-${k}"><div class="ex-top"><span class="num">${k}</span><div class="ex-nome"><h3>${esc(ex.nome)}</h3><p>${plural(ex.series, "série")} · ${esc(SEM.faixa)} reps</p>${ex.tecnica ? `<span class="tec">${esc(ex.tecnica)}</span>` : ""}</div></div>
       ${ex.obs ? `<div class="obs">${esc(ex.obs)}</div>` : ""}${msg ? `<div class="recmsg">Recado do aluno: “${esc(msg)}”</div>` : ""}
       <div class="recorde" id="rec-${k}" ${rec ? "" : "hidden"}>🏆 ${rec ? esc(rec) : ""}</div><div class="series">${s}</div>
+      ${blocoEsforco(0, k, esforcoEx(d,k))}
       <div class="acoes">${ant ? `<button class="btn" type="button" data-repetir="${k}">Mesma carga da semana ${ant.semana}</button>` : ""}
         ${desc[i] ? `<button class="btn amarelo" type="button" data-desc="${esc(ex.nome)}">Descanso ${mmss(REST)}</button>` : `<span class="sub">Sem descanso: direto para o próximo.</span>`}
         ${ex.video ? `<a class="btn" href="${esc(ex.video)}" target="_blank" rel="noopener">▶ Vídeo</a>` : ""}
@@ -675,11 +678,22 @@ function ligarRegistro(){
     if ((INICIO.versao || 0) < 4){ aviso("Para mandar dicas, cole antes o código novo do servidor (página Ligar o app do treinador)."); return; }
     const box = $(`dc-${b.dataset.dica}`); box.hidden = !box.hidden; if (!box.hidden) $(`dica-${b.dataset.dica}`).focus(); });
   corpo.querySelectorAll("textarea[id^=dica-]").forEach(t => t.addEventListener("input", () => escreveuDica(t)));
+  corpo.querySelectorAll("[data-esf]").forEach(b => b.onclick = () => {
+    const k = +b.dataset.k, v = +b.dataset.v, ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
+    const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
+    const novo = esforcoEx(d,k) === v ? "" : v; row[COL_ESFORCO] = novo === "" ? "" : String(novo);
+    b.parentNode.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(+x.dataset.v === novo)));
+    enfileirar(opTreinoT(d));
+  });
 }
 function dicaAnterior(nome, N){
   for (let w = N - 1; w >= 1; w--) for (const L of Object.keys(P.reg)) for (let j = 1; j <= 9; j++){
     const row = (P.reg[L]||[])[linhaReg(w,j)]; if (row && nomeDaLinha(row) === nome.trim() && txt(row[COL_DICA])) return {texto: txt(row[COL_DICA]), semana: w}; }
   return null;
+}
+function opTreinoT(d){
+  const linhas = d.exercicios.map((ex2,i) => { const r = []; for (let q = 1; q <= 5; q++){ r.push(q <= ex2.series ? reps(d,i+1,q) : ""); r.push(q <= ex2.series ? kg(d,i+1,q) : ""); } return r; });
+  return {tipo: "treino", aba: d.aba, semana: semanaN, linhas, esforco: d.exercicios.map((ex,i) => esforcoEx(d,i+1))};
 }
 function escreveuDica(t){
   const d = SEM.dias[atual], k = +t.id.split("-")[1], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
@@ -700,8 +714,7 @@ function digitou(inp){
     const el = $(`rec-${k}`), antes = el.hidden, rec = recorde(d,k,ex);
     el.hidden = !rec; el.textContent = rec ? "🏆 " + rec : "";
     if (rec && antes){ aviso("🏆 " + rec); try { navigator.vibrate && navigator.vibrate(60); } catch(e){} }
-    const linhas = d.exercicios.map((ex2,i) => { const r = []; for (let q = 1; q <= 5; q++){ r.push(q <= ex2.series ? reps(d,i+1,q) : ""); r.push(q <= ex2.series ? kg(d,i+1,q) : ""); } return r; });
-    enfileirar({tipo: "treino", aba: d.aba, semana: semanaN, linhas});
+    enfileirar(opTreinoT(d));
   }
   if (c){ const ch = semanaN+"|"+d.dia, o = P.cardio[ch] || (P.cardio[ch] = {minutos:"", bpm:"", recado:""});
     o[c[1] === "min" ? "minutos" : "bpm"] = val === "" ? "" : Math.round(val);
@@ -709,6 +722,12 @@ function digitou(inp){
     enfileirar({tipo: "cardio", semana: semanaN, dia: d.dia, data: dt ? ddaaaa(dt) : "", prescrito: d.cardio, minutos: o.minutos ?? "", bpm: o.bpm ?? "", recado: o.recado || ""}); }
   contagem();
   document.querySelectorAll("[data-dia]").forEach(b => b.classList.toggle("feito", diaFeito(+b.dataset.dia)));
+}
+function esforcoEx(d, k){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_ESFORCO)); return v === "" ? "" : Math.max(0, Math.min(4, Math.round(v))); }
+// Esforço da série (repetições na reserva): escala validada por Zourdos e cols. 2016 (doi:10.1519/JSC.0000000000001049)
+function blocoEsforco(id, k, val){
+  return `<div class="esforco" role="group" aria-label="Na última série, quantas repetições ainda sobravam?"><span>Na última série, quantas reps ainda sobravam?</span>
+    <div>${[0,1,2,3,4].map(v => `<button type="button" data-esf="${id}" data-k="${k}" data-v="${v}" aria-pressed="${val === v}">${v === 0 ? "0 · no limite" : v === 4 ? "4 ou +" : v}</button>`).join("")}</div></div>`;
 }
 function contagem(){ const d = SEM.dias[atual], el = $("cont"); if (!el || !d) return; el.textContent = d.exercicios.length ? `${d.exercicios.filter((ex,i) => exOk(d,i+1,ex)).length} de ${d.exercicios.length} feitos` : ""; }
 function pararSemSalvar(){ /* a fila já guarda tudo; nada a fazer ao trocar de tela */ }
