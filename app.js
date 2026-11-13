@@ -206,16 +206,38 @@ function diaFeito(n){ const d = SEM.dias[n]; if (!d) return false;
 // Foster e cols. 2001 (0 repouso, 1 muito, muito fácil, 2 fácil, 3 moderado, 4 um pouco difícil, 5 difícil, 7 muito difícil,
 // 10 máximo; 6, 8 e 9 sem nome; tabela em Haddad e cols. 2017, doi:10.3389/fnins.2017.00612), usada série a série
 // no treino de força por Day e cols. 2004 (doi:10.1519/R-13113.1).
-// O recado explica a PSE como o esforço feito, sem misturar dor nem cansaço: a percepção de esforço é diferente
-// dessas sensações e misturá-las muda a nota (Pageaux 2016, doi:10.1080/17461391.2016.1188992; Halperin e Emanuel 2020,
-// doi:10.1007/s40279-019-01229-z; Bergevin e cols. 2022, doi:10.1007/s40279-022-01762-4).
 const comPse = () => (P && P.versao || 0) >= PSE_DESDE;
 function pse(d, k, s){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_PSE + s)); return v === "" || v < 0 || v > 10 ? "" : v; }
-function guiaPse(){
-  // recado pequeno e sempre à vista (pedido de 13/11/2026); a escala completa abre no "Ver a escala"
-  return `<details class="guia-pse"><summary><b>PSE</b> é o quanto você se esforçou na série, de 0 (repouso) a 10 (esforço máximo). Não conte dor nem cansaço, só o esforço. <span class="ver"><span class="abrir">Ver a escala</span><span class="fechar">Fechar</span></span></summary>
-    <dl><dt>0</dt><dd>repouso</dd><dt>1</dt><dd>muito, muito fácil</dd><dt>2</dt><dd>fácil</dd><dt>3</dt><dd>moderado</dd><dt>4</dt><dd>um pouco difícil</dd>
-    <dt>5</dt><dd>difícil</dd><dt>7</dt><dd>muito difícil</dd><dt>10</dt><dd>máximo</dd></dl><p class="entre">6, 8 e 9 ficam entre as palavras.</p></details>`;
+// ---------- escala de PSE: toque no campo PSE e escolha o número (pedido de 13/11/2026) ----------
+// Faixas do criador: 0 a 2 fácil, 3 a 6 médio, 7 a 10 muito difícil; a cor fica mais forte até o 10.
+const PSE_FAIXAS = [["Fácil", [0,1,2], "#79D198"], ["Médio", [3,4,5,6], "#FFD60A"], ["Muito difícil", [7,8,9,10], "#FF7A45"]];
+const PSE_COR = ["#D3F2DC","#A8E4BB","#79D198","#FFF0A6","#FFE45C","#FFD60A","#FFB224","#FF8A3D","#F4612F","#DD3A2C","#B3201C"];
+const corPse = v => ({fundo: PSE_COR[v], texto: v >= 9 ? "#FAFAFA" : "#0B0B0B"});
+function conteudoPse(v){
+  if (v === "" || v == null) return `<span class="pse-vazio">–</span><span class="rot">PSE</span>`;
+  const c = corPse(v); return `<span class="pse-n" style="background:${c.fundo};color:${c.texto}">${v}</span><span class="rot">PSE</span>`;
+}
+function botaoPse(id, k, s, v){
+  return `<button type="button" class="campo pse-campo" id="${id}" data-pse-k="${k}" data-pse-s="${s}" aria-haspopup="dialog" aria-label="PSE da série ${s}${v === "" ? "" : ": " + v}">${conteudoPse(v)}</button>`;
+}
+function pintarPse(btn, s, v){ btn.innerHTML = conteudoPse(v); btn.setAttribute("aria-label", `PSE da série ${s}${v === "" ? "" : ": " + v}`); }
+function fecharPse(){ const f = $("pseFundo"); if (f) f.remove(); }
+function abrirPse(pergunta, detalhe, atualV, escolher, origem){
+  fecharPse();
+  const fundo = document.createElement("div"); fundo.className = "pse-fundo"; fundo.id = "pseFundo";
+  fundo.innerHTML = `<div class="pse-folha" role="dialog" aria-modal="true" aria-labelledby="pseTit">
+    <div class="pse-topo"><div><h3 id="pseTit">${esc(pergunta)}</h3><p>${esc(detalhe)}</p></div><button type="button" class="pse-x" aria-label="Fechar">✕</button></div>
+    ${PSE_FAIXAS.map(([nome, nums, cor]) => `<div class="pse-faixa"><span style="color:${cor}">${nome}</span><div class="pse-nums">${nums.map(v => { const c = corPse(v);
+      return `<button type="button" data-v="${v}" aria-pressed="${atualV === v}" aria-label="${v}, ${nome.toLowerCase()}" style="background:${c.fundo};color:${c.texto}">${v}</button>`; }).join("")}</div></div>`).join("")}
+    ${atualV !== "" && atualV != null ? `<button type="button" class="btn pse-apagar">Apagar</button>` : ""}</div>`;
+  document.body.appendChild(fundo);
+  const fechar = () => { fecharPse(); if (origem && document.body.contains(origem)) origem.focus(); };
+  fundo.onclick = e => { if (e.target === fundo) fechar(); };
+  fundo.querySelector(".pse-x").onclick = fechar;
+  fundo.querySelectorAll("[data-v]").forEach(b => b.onclick = () => { escolher(+b.dataset.v); fechar(); });
+  const ap = fundo.querySelector(".pse-apagar"); if (ap) ap.onclick = () => { escolher(""); fechar(); };
+  fundo.addEventListener("keydown", e => { if (e.key === "Escape") fechar(); });
+  (fundo.querySelector('[aria-pressed="true"]') || fundo.querySelector("[data-v]")).focus({preventScroll: true});
 }
 function diaComAlgo(d){ return d.exercicios.some((ex,i) => { for (let s = 1; s <= ex.series; s++) if (reps(d,i+1,s) !== "") return true; return false; }); }
 
@@ -282,7 +304,6 @@ function dicaEx(d, k, nome){
     const row = (P.reg[L]||[])[linhaReg(w,j)]; if (row && nomeDaLinha(row) === nome.trim() && txt(row[COL_DICA])) return {texto: txt(row[COL_DICA]), semana: w}; }
   return null;
 }
-function conferePse(digitado){ return digitado !== "" && digitado > 10 ? "A PSE vai de 0 a 10." : ""; }
 function confere(tipo, valor, ref, faixa){
   if (valor === "" || valor == null) return "";
   if (tipo === "kg"){
@@ -439,11 +460,10 @@ function render(){
   let h = `<div class="tit-dia"><h2>${NOMES[d.dia]}${d.treino ? " · Treino " + d.treino : ""}</h2><span class="contagem" id="cont"></span></div>`;
   if (dt) h += `<p class="nota" style="margin:-8px 0 0">${ddaaaa(dt)}</p>`;
   const desc = grupos(d.exercicios), lo = (SEM.faixa||"").split(" a ")[0] || "0", cp = comPse();
-  if (cp && d.exercicios.length) h += guiaPse();
   d.exercicios.forEach((ex,i) => { const k = i+1, ant = anterior(ex.nome, semanaN); let s = "";
     for (let si = 1; si <= ex.series; si++){
       const a = ant && ant.series[si-1], r = reps(d,k,si), q = kg(d,k,si);
-      s += `<div class="serie${cp ? " pse" : ""}"><span>S${si}</span>${campo(`d${n}e${k}s${si}r`,"reps",r,lo)}${campo(`d${n}e${k}s${si}k`,"kg",q,a ? fmt(a.kg) : "0",true)}${cp ? campo(`d${n}e${k}s${si}p`,"PSE",pse(d,k,si),"") : ""}
+      s += `<div class="serie${cp ? " pse" : ""}"><span>S${si}</span>${campo(`d${n}e${k}s${si}r`,"reps",r,lo)}${campo(`d${n}e${k}s${si}k`,"kg",q,a ? fmt(a.kg) : "0",true)}${cp ? botaoPse(`d${n}e${k}s${si}p`, k, si, pse(d,k,si)) : ""}
         ${a ? `<div class="antes">Semana ${ant.semana}: ${a.reps} reps × ${fmt(a.kg)} kg${cp && a.pse !== "" ? ` · PSE ${fmt(a.pse)}` : ""}</div>` : ""}
         <div class="confere" id="cf-${n}-${k}-${si}">${esc(confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa))}</div></div>`;
     }
@@ -480,6 +500,13 @@ function render(){
     inp.addEventListener("blur", () => { if (precisaRender) setTimeout(() => { if (!document.activeElement || document.activeElement.tagName !== "INPUT") { precisaRender = false; montarSemana(semanaN, true); } }, 50); });
   });
   tela.querySelectorAll("textarea").forEach(t => t.addEventListener("input", () => escreveuRecado(t)));
+  tela.querySelectorAll("[data-pse-k]").forEach(b => b.onclick = () => {
+    const k = +b.dataset.pseK, s = +b.dataset.pseS, ex = d.exercicios[k-1];
+    abrirPse("Quanto você se esforçou?", `${ex.nome.trim()} · série ${s}`, pse(d,k,s), v => {
+      const reg = P.reg[d.aba] || (P.reg[d.aba] = []), row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
+      row[COL_PSE+s] = v === "" ? "" : String(v); pintarPse(b, s, v); enfileirar(opTreino(d));
+    }, b);
+  });
   tela.querySelectorAll("[data-repetir]").forEach(b => b.onclick = () => { const k = +b.dataset.repetir, ex = d.exercicios[k-1], ant = anterior(ex.nome, semanaN);
     (ant ? ant.series : []).forEach((a,si) => { if (!a || si >= ex.series) return; const el = $(`d${n}e${k}s${si+1}k`); if (el && el.value === ""){ el.value = fmt(a.kg); digitou(el); } }); });
   tela.querySelectorAll("[data-desc]").forEach(b => b.onclick = () => iniciar(b.dataset.desc));
@@ -490,15 +517,8 @@ function render(){
 
 function digitou(inp){
   const n = atual, d = SEM.dias[n];
-  const m = /^d(\d+)e(\d+)s(\d+)([rk])$/.exec(inp.id), c = /^c(\d+)(min|bpm)$/.exec(inp.id), p = /^d(\d+)e(\d+)s(\d+)p$/.exec(inp.id);
+  const m = /^d(\d+)e(\d+)s(\d+)([rk])$/.exec(inp.id), c = /^c(\d+)(min|bpm)$/.exec(inp.id);
   const val = lerDigitado(inp.value);
-  if (p){   // PSE: só de 0 a 10 vai para a planilha; acima disso pede para conferir
-    const k = +p[2], s = +p[3], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
-    const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
-    row[COL_PSE+s] = val === "" || val > 10 ? "" : String(Math.round(val));
-    $(`cf-${n}-${k}-${s}`).textContent = confereSerie(d,n,k,s);
-    enfileirar(opTreino(d));
-  }
   if (m){
     const k = +m[2], s = +m[3], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
     const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
@@ -516,8 +536,8 @@ function digitou(inp){
   contagem(); abasDias();
 }
 function confereSerie(d, n, k, s){
-  const ex = d.exercicios[k-1], ant = anterior(ex.nome, semanaN), a = ant && ant.series[s-1], ep = $(`d${n}e${k}s${s}p`);
-  return confere("kg", kg(d,k,s), a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", reps(d,k,s), null, SEM.faixa) || conferePse(ep ? lerDigitado(ep.value) : "");
+  const ex = d.exercicios[k-1], ant = anterior(ex.nome, semanaN), a = ant && ant.series[s-1];
+  return confere("kg", kg(d,k,s), a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", reps(d,k,s), null, SEM.faixa);
 }
 function escreveuRecado(t){
   const n = atual, d = SEM.dias[n], m = /^m-(\d+)-(\w+)$/.exec(t.id); if (!m) return;

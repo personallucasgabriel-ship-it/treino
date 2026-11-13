@@ -150,6 +150,24 @@ th{font-weight:600;color:var(--cinza);font-size:12px}
 .serie{display:grid;grid-template-columns:30px 1fr 1fr;gap:6px 8px;align-items:center}
 .serie.pse{grid-template-columns:24px 1fr 1.2fr .95fr;gap:6px}
 .serie.pse .campo{padding:0 8px}
+.pse-campo{cursor:pointer;font:inherit;color:var(--branco);width:100%;min-height:42px;justify-content:space-between;gap:6px;text-align:left}
+.pse-campo .rot{font-size:12px;color:var(--cinza)}
+.pse-vazio{font-family:var(--f-num);font-size:18px;color:var(--apagado)}
+.pse-n{min-width:30px;height:28px;padding:0 4px;border-radius:7px;display:inline-grid;place-items:center;font-family:var(--f-num);font-weight:700;font-size:16px}
+.pse-fundo{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+.pse-folha{width:100%;max-width:560px;background:var(--carvao);border:1px solid var(--linha);border-bottom:0;border-radius:18px 18px 0 0;padding:16px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px;animation:pseSobe .18s ease-out}
+@keyframes pseSobe{from{transform:translateY(24px);opacity:0}}
+@media (prefers-reduced-motion: reduce){.pse-folha{animation:none}}
+.pse-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pse-topo h3{margin:0;font-size:17px}
+.pse-topo p{margin:2px 0 0;font-size:13px;color:var(--cinza)}
+.pse-x{flex:0 0 auto;width:36px;height:36px;border:1px solid var(--linha);border-radius:999px;background:none;color:var(--branco);font-size:15px}
+.pse-faixa{display:flex;flex-direction:column;gap:6px}
+.pse-faixa>span{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.pse-nums{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.pse-nums button{height:52px;border:0;border-radius:12px;font-family:var(--f-num);font-size:22px;font-weight:700}
+.pse-nums button[aria-pressed="true"]{outline:3px solid var(--branco);outline-offset:2px}
+.pse-apagar{align-self:flex-start}
 .serie>span{font-family:var(--f-num);font-size:13px;color:var(--cinza)}
 .campo{display:flex;align-items:center;background:var(--preto);border:1px solid var(--linha);border-radius:8px;padding:0 10px;min-width:0}
 .campo:focus-within{border-color:var(--amarelo)}
