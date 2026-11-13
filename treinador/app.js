@@ -185,7 +185,7 @@ function telaHoje(){
   const depois = ev.filter(e => e.d >= new Date(hoje.getTime() + DIA_MS));
   const evento = e => `<div class="card evento cor-${esc(e.cor)}"><h3>${esc(e.titulo)}</h3>${e.diaInteiro ? "" : `<p class="sub">${String(e.d.getHours()).padStart(2,"0")}:${String(e.d.getMinutes()).padStart(2,"0")}</p>`}${e.descricao ? `<pre>${esc(e.descricao)}</pre>` : ""}</div>`;
   h += `<section class="secao"><header><h2>Na agenda</h2><span class="cont">${plural(deHoje.length, "tarefa")}</span></header>`;
-  h += deHoje.length ? deHoje.map(evento).join("") : `<p class="vazio">Nenhuma tarefa de aluno ou de lead na agenda hoje.</p>`;
+  h += INICIO.agendaErro ? `<p class="vazio">Não consegui ler a agenda: ${esc(INICIO.agendaErro)}</p>` : deHoje.length ? deHoje.map(evento).join("") : `<p class="vazio">Nenhuma tarefa de aluno ou de lead na agenda hoje.</p>`;
   if (depois.length) h += `<details><summary>Próximos 7 dias (${depois.length})</summary><div class="lista" style="margin-top:8px">${depois.map(e => evento({...e, titulo: `${NOMES[SEMANA_JS[e.d.getDay()]].slice(0,3)} ${dd(e.d)} · ${e.titulo}`})).join("")}</div></details>`;
   h += `</section>`;
 
@@ -719,7 +719,7 @@ async function atualizar(){
   try {
     const j = await chamar({acao: "t_inicio"}, 90000);
     if (gravacoes !== g0){ lendo = false; setTimeout(atualizar, 500); return; }
-    INICIO = {alunos: j.alunos, agenda: j.agenda, lido_em: j.lido_em}; ultimaLeitura = new Date(j.lido_em); guardar("t_inicio", INICIO);
+    INICIO = {alunos: j.alunos, agenda: j.agenda, agendaErro: j.agendaErro || "", lido_em: j.lido_em}; ultimaLeitura = new Date(j.lido_em); guardar("t_inicio", INICIO);
     const r = rota(), foco = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (!(r.tela === "a" && r.aba !== "resumo") && !foco) render(false);
     else if (r.tela === "a" && r.aba === "registrar" && !$("corpo")) render(false);
