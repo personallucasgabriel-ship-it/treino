@@ -165,7 +165,7 @@ function telaSemChave(){
 // ---------- WhatsApp: as mensagens são as de ferramentas/guia-consultoria/mensagens-whatsapp.md e da skill secretaria ----------
 const MSG = {
   conversa: a => `Oi, ${primeiro(a.nome)}! `,
-  registro: (a, N) => `Oi, ${primeiro(a.nome)}! Como está sendo a semana de treino? 💪\n\nQuando terminar, me manda o PDF da semana ${N} preenchido. É com ele que eu acompanho a sua evolução e preparo a sua próxima semana 🙂`,
+  registro: (a, N) => `Oi, ${primeiro(a.nome)}! Como está sendo a semana de treino? 💪\n\nVi que faltam treinos anotados no app esta semana. Se você já treinou, anota lá as repetições e as cargas de cada série, tá? É com elas que eu acompanho a sua evolução e ajusto o seu treino 🙂`,
   fotos: a => `Oi, ${primeiro(a.nome)}! Chegou o dia da sua reavaliação 📸\n\nÉ tudo pelo mesmo formulário:\n• as 4 fotos (lembra do Guia de fotos: mesmo lugar, mesma luz e mesmo horário)\n• o feedback do mês, que leva uns 2 minutinhos\n\n${FORM_FOTOS}\n\nMe manda até sábado, que no domingo te envio o seu relatório de evolução 📈`,
   renovar: a => `${primeiro(a.nome)}, o seu ciclo está chegando ao fim 🎉 Foi muito bom acompanhar a sua evolução nessas semanas!\n\nBora para o próximo? Se você renovar, eu já monto o seu treino novo, ajustado com tudo o que a gente viu no seu relatório e nas suas fotos, pra começar na próxima segunda 💪`
 };

@@ -180,7 +180,7 @@ function montarSemana(N, manterDia){
   $("datas").textContent = ini ? ` ${dd(ini)}–${dd(fim)}` : "";
   $("faixa").textContent = faixa || "—"; $("regen").hidden = !/15\s*a\s*20/.test(faixa);
   $("desc").textContent = mmss(descanso(faixa));
-  $("semAnt").disabled = N <= 1; $("semProx").disabled = N >= 12; $("envio").hidden = true;
+  $("semAnt").disabled = N <= 1; $("semProx").disabled = N >= 12; $("envio").hidden = true; $("plano").hidden = true;
   render();
 }
 function proximoDia(N){ // na semana de hoje, o próximo dia com treino; em outra semana, o primeiro
@@ -453,6 +453,7 @@ function render(){
       <div class="acoes"><button class="btn${c.recado ? " tem" : ""}" type="button" data-recado="c">${c.recado ? "✎ Recado" : "✎ Recado para o treinador"}</button></div></div>`; }
   if (d.exercicios.length) h += `<button class="grande" type="button" id="story">📸 Compartilhar no story</button>`;
   h += `<button class="grande sec" type="button" id="enviar">Ver registro da semana</button>`;
+  h += `<button class="grande sec" type="button" id="verPlano">🗺 Ver o planejamento do ciclo</button>`;
   h += blocoAgenda();
   tela.innerHTML = h; contagem();
   ligarAgenda();
@@ -476,6 +477,7 @@ function render(){
   tela.querySelectorAll("[data-desc]").forEach(b => b.onclick = () => iniciar(b.dataset.desc));
   tela.querySelectorAll("[data-recado]").forEach(b => b.onclick = () => { const k = b.dataset.recado, box = $(`rc-${n}-${k}`); box.hidden = !box.hidden; if (!box.hidden) $(`m-${n}-${k}`).focus(); });
   $("enviar").onclick = mostrarRegistro;
+  $("verPlano").onclick = mostrarPlano;
 }
 
 function digitou(inp){
@@ -639,6 +641,22 @@ function mostrarRegistro(){
     if (d.cardio){ const c = P.cardio[SEM.semana+"|"+d.dia] || {}; t += `  Aeróbico: ${c.minutos !== "" && c.minutos != null ? c.minutos : "-"} min, ${c.bpm !== "" && c.bpm != null ? c.bpm : "-"} bpm (pedido: ${d.cardio})\n`; if (c.recado) t += `    Recado: ${c.recado}\n`; } });
   $("envio").hidden = false; $("texto").textContent = t; $("envio").scrollIntoView({behavior: "smooth"});
 }
+// ---------- planejamento do ciclo (desde 13/11/2026, no lugar do PDF do planejamento) ----------
+function mostrarPlano(){
+  const nums = Object.keys(P.faixas).map(Number).sort((a,b) => a-b), hoje = semanaDe(hojeZero());
+  let h = `<p class="nota">O seu ciclo completo, do começo ao fim${P.ini ? `: de ${ddaaaa(P.ini)}` : ""}${P.fim ? ` até ${ddaaaa(P.fim)}` : ""}. Toque numa semana para ver os treinos dela.</p>`;
+  h += `<h3>Progressão</h3><div class="plano-sem">` + nums.map(N => `<button type="button" data-ir="${N}" class="${N === hoje ? "hoje" : ""}${N === semanaN ? " atual" : ""}"><small>Semana ${N}</small><b>${esc(P.faixas[N])}</b><small>reps${/15\s*a\s*20/.test(P.faixas[N]) ? " · regenerativa" : ""}</small></button>`).join("") + `</div>`;
+  h += `<h3>Divisão da semana</h3><div class="plano-div">` + ORDEM.map(d => `<div><small>${d}</small><b>${P.periodo[d] ? esc(P.periodo[d]) : "—"}</b></div>`).join("") + `</div>`;
+  const aer = P.aerobicos.filter(b => Object.keys(b.dias).length);
+  if (aer.length){ h += `<h3>Aeróbicos</h3>`;
+    aer.forEach(b => { h += `<p class="plano-aer"><b>Semana${b.semanas.length > 1 ? "s" : ""} ${b.semanas.join(", ")}:</b> ${ORDEM.filter(d => b.dias[d]).map(d => `${NOMES[d]}, ${esc(b.dias[d])}`).join(" · ")}</p>`; }); }
+  Object.keys(P.treinos).sort().forEach(L => { const exs = P.treinos[L]; if (!exs.length) return;
+    h += `<h3>Treino ${L}</h3><ol class="plano-tr">` + exs.map(e => { const v = P.videos[e.nome.trim()];
+      return `<li><div><b>${esc(e.nome)}</b> <span>${e.series} ${e.series === 1 ? "série" : "séries"}${e.tecnica ? " · " + esc(e.tecnica) : ""}</span>${e.obs ? `<small>${esc(e.obs)}</small>` : ""}</div>${v ? `<a class="btn" href="${esc(v)}" target="_blank" rel="noopener">▶ Vídeo</a>` : ""}</li>`; }).join("") + `</ol>`; });
+  $("planoCorpo").innerHTML = h; $("plano").hidden = false; $("plano").scrollIntoView({behavior: "smooth"});
+  $("planoCorpo").querySelectorAll("[data-ir]").forEach(b => b.onclick = () => { $("plano").hidden = true; montarSemana(+b.dataset.ir); window.scrollTo({top: 0, behavior: "smooth"}); });
+}
+$("fecharPlano").onclick = () => { $("plano").hidden = true; };
 $("copiar").onclick = async e => { try { await navigator.clipboard.writeText($("texto").textContent); e.target.textContent = "Copiado"; }
   catch(err){ const r = document.createRange(); r.selectNodeContents($("texto")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); e.target.textContent = "Texto selecionado: copie"; } };
 
