@@ -9,7 +9,11 @@ const SEMANA_JS = ["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
 const NOMES = {DOM:"Domingo",SEG:"Segunda",TER:"Terça",QUA:"Quarta",QUI:"Quinta",SEX:"Sexta",SAB:"Sábado"};
 const OFFSET = {SEG:0,TER:1,QUA:2,QUI:3,SEX:4,SAB:5,DOM:6};   // a semana do ciclo começa na segunda
 const SEGUIDOS = {BISET:2, TRISET:3, "GIANT SET":99};
-const COL_RECADO = 14;   // coluna O das abas Registro (leitura A5:O157)
+const COL_RECADO = 14;   // coluna O das abas Registro (leitura A5:P157)
+const COL_DICA = 15;     // coluna P: dica do treinador (escrita pelo app do treinador)
+const FORM_FOTOS = "https://forms.gle/Jc9hwKyR9xHa6WP17";
+// Cardio da semana: qualquer texto que não seja o do modelo da planilha ("min, manter uma média de bpm")
+const cardioValido = t => !!t && (/\d/.test(t) || !/^min,?\s*manter uma m[ée]dia de\s*bpm\.?$/i.test(t.replace(/\s+/g, " ").trim()));
 
 const $ = id => document.getElementById(id);
 const txt = v => (v == null ? "" : String(v)).trim();
@@ -92,7 +96,7 @@ function lerTreino(v){
       if (ra){ sem = []; for (let k = +ra[1]; k <= +ra[2]; k++) sem.push(k); }
       const dias = {};
       for (let i = 1; i <= 7; i++){ const d = cel(r+i,0), t = cel(r+i,1);
-        if (NOMES[d] && /\d/.test(t)) dias[d] = t.replace(/(\d+)\s*min/i,"$1 min").replace(/\s*em um[a]?\s*/i,", ").replace(/media/i,"média").replace(/(\d+)\s*bpm/i,"$1 bpm"); }
+        if (NOMES[d] && cardioValido(t)) dias[d] = t.replace(/(\d+)\s*min/i,"$1 min").replace(/\s*em um[a]?\s*/i,", ").replace(/media/i,"média").replace(/(\d+)\s*bpm/i,"$1 bpm"); }
       out.aerobicos.push({semanas: sem, dias});
     }
   }
@@ -132,6 +136,7 @@ function montarDados(raw){
   P = lerTreino(raw.treino || []);
   P.videos = {}; (raw.videos||[]).forEach(r => { if (txt(r[0]) && /^https?:/.test(txt(r[1]))) P.videos[txt(r[0])] = txt(r[1]); });
   P.ini = data(P.inicio); P.fim = data(P.revisao, P.ini || undefined);
+  P.fotosEm = raw.fotos_em ? new Date(raw.fotos_em + "T12:00:00") : null;
   P.abas = abasDaSemana();
   P.reg = {}; Object.keys(raw.reg||{}).forEach(L => { P.reg[L] = (raw.reg[L]||[]).map(r => r.slice()); });
   P.cardio = {}; (raw.cardio||[]).forEach(r => { const s = Number(r[0]), d = txt(r[1]); if (s && d) P.cardio[s+"|"+d] = {minutos: lerPlanilha(r[4]), bpm: lerPlanilha(r[5]), recado: txt(r[6])}; });
@@ -208,20 +213,52 @@ function historico(nome, N){
 function anterior(nome, N){ const h = historico(nome, N); if (!h.length) return null;
   const u = h[h.length-1], porSerie = []; u.series.forEach(x => { if (porSerie[x.s] == null) porSerie[x.s] = x; });
   return {semana: u.semana, series: porSerie}; }
-function recorde(d, k, ex){ // melhor marca desta semana contra todas as anteriores
+function recorde(d, k, ex){ // melhor marca desta semana contra todas as anteriores (regra em recordeDe)
   const h = historico(ex.nome, semanaN); if (!h.length) return null;
   const antes = h.flatMap(x => x.series), agora = [], ant = anterior(ex.nome, semanaN);
   for (let s = 1; s <= ex.series; s++){ const r = reps(d,k,s), q = kg(d,k,s), a = ant && ant.series[s-1];
     if (confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa)) continue;   // número suspeito não vira recorde
     if (r !== "" && r > 0) agora.push({reps: r, kg: q === "" ? 0 : q}); }
-  if (!agora.length) return null;
-  const maxAntes = Math.max(...antes.map(x => x.kg)), maxAgora = Math.max(...agora.map(x => x.kg));
-  if (maxAgora > maxAntes && maxAgora > 0){ const r = Math.max(...agora.filter(x => x.kg === maxAgora).map(x => x.reps));
-    return {tipo: "carga", texto: `Recorde de carga: ${fmt(maxAgora)} kg × ${r} (antes ${fmt(maxAntes)} kg)`}; }
+  const rec = recordeDe(agora, antes);
+  return rec ? {tipo: rec.tipo, texto: textoRecorde(rec)} : null;
+}
+// Recordes: a mesma regra no app do treinador, no servidor (Treinador.gs) e no relatório (historico.py).
+// 1) Força: com séries de até 10 repetições (a estimativa só vale até 10), a força estimada da melhor série
+//    (Epley: kg × (1 + reps/30)) passa a melhor de antes.
+// 2) Sem isso: uma série que nenhuma de antes igualou (carga e reps iguais ou maiores) e que supera alguma de antes.
+function recordeDe(agora, antes){
+  agora = agora.filter(x => x.reps > 0); antes = antes.filter(x => x.reps > 0);
+  if (!agora.length || !antes.length) return null;
+  const e1 = x => x.kg * (1 + x.reps / 30);
+  const a10 = agora.filter(x => x.kg > 0 && x.reps <= 10), p10 = antes.filter(x => x.kg > 0 && x.reps <= 10);
+  if (a10.length && p10.length){
+    const m = a10.reduce((b,x) => e1(x) > e1(b) ? x : b), pm = Math.max(...p10.map(e1));
+    if (e1(m) > pm + 1e-9) return {tipo: "forca", kg: m.kg, reps: m.reps, e1: e1(m), antes: pm};
+  }
   let melhor = null;
-  agora.forEach(x => { const ref = antes.filter(y => y.kg >= x.kg); const mr = ref.length ? Math.max(...ref.map(y => y.reps)) : 0;
-    if (ref.length && x.reps > mr && (!melhor || x.kg > melhor.kg || (x.kg === melhor.kg && x.reps > melhor.reps))) melhor = {...x, antes: mr}; });
-  if (melhor) return {tipo: "reps", texto: `Recorde de repetições: ${melhor.reps} com ${fmt(melhor.kg)} kg (antes ${melhor.antes})`};
+  agora.forEach(x => {
+    if (antes.some(p => p.kg >= x.kg && p.reps >= x.reps)) return;
+    if (!antes.some(p => x.kg >= p.kg && x.reps >= p.reps)) return;
+    if (!melhor || x.kg > melhor.kg || (x.kg === melhor.kg && x.reps > melhor.reps)) melhor = x;
+  });
+  if (!melhor) return null;
+  const pmax = Math.max(...antes.map(p => p.kg));
+  if (melhor.kg > pmax) return {tipo: "carga", kg: melhor.kg, reps: melhor.reps, antes: pmax};
+  const ref = antes.filter(p => p.kg >= melhor.kg).reduce((b,p) => p.reps > b.reps ? p : b);
+  return {tipo: "reps", kg: melhor.kg, reps: melhor.reps, antes: ref.reps, antesKg: ref.kg};
+}
+function textoRecorde(r){
+  const f1 = n => String(Math.round(n * 10) / 10).replace(".", ",");
+  if (r.tipo === "forca") return `Recorde de força: ${fmt(r.kg)} kg × ${r.reps} (força estimada ${f1(r.e1)} kg; antes ${f1(r.antes)} kg)`;
+  if (r.tipo === "carga") return `Recorde de carga: ${fmt(r.kg)} kg × ${r.reps} (antes ${fmt(r.antes)} kg)`;
+  if (r.kg > 0) return `Recorde de repetições: ${r.reps} com ${fmt(r.kg)} kg (antes ${r.antes}${r.antesKg !== r.kg ? ` com ${fmt(r.antesKg)} kg` : ""})`;
+  return `Recorde de repetições: ${r.reps} (antes ${r.antes})`;
+}
+// dica do treinador: a desta semana ou, se não tiver, a mais recente de antes no mesmo exercício
+function dicaEx(d, k, nome){
+  const aqui = txt(celula(d.aba, semanaN, k, COL_DICA)); if (aqui) return {texto: aqui, semana: semanaN};
+  for (let w = semanaN - 1; w >= 1; w--) for (const L of Object.keys(P.reg)) for (let j = 1; j <= 9; j++){
+    const row = (P.reg[L]||[])[linhaReg(w,j)]; if (row && nomeDaLinha(row) === nome.trim() && txt(row[COL_DICA])) return {texto: txt(row[COL_DICA]), semana: w}; }
   return null;
 }
 function confere(tipo, valor, ref, faixa){
@@ -326,10 +363,28 @@ function avisos(){
       h += card("Hoje é dia de descanso", p ? `Próximo treino: ${NOMES[p.dia].toLowerCase()}${p.treino ? `, Treino ${p.treino}` : ", cardio"}.` : "Seu próximo treino é na semana que vem.", "ok"); }
     else if (diaFeito(i)) h += card("Treino de hoje feito ✓", "Tudo anotado. Bom descanso!", "ok");
   }
+  h += cardFotos(hoje, wHoje) + cardFimCiclo(hoje);
   h += cardInstalar();
   box.innerHTML = h;
   const bi = $("instalar"); if (bi) bi.onclick = instalarAndroid;
   const bn = $("naoInstalar"); if (bn) bn.onclick = () => { guardar("instalar-depois", Date.now()); avisos(); };
+}
+// semanas 4, 8, 12 e a última do ciclo: de quinta a domingo, o lembrete das fotos (some quando o formulário chega)
+function cardFotos(hoje, w){
+  if (!P.ini || w < 1) return "";
+  const total = P.fim ? Math.max(1, Math.ceil((P.fim - P.ini) / (7*864e5))) : 12;
+  if (!(w % 4 === 0 || w === total) || w > total) return "";
+  const qui = dataDoDia(w, "QUI"), dom = dataDoDia(w, "DOM");
+  if (hoje < qui || hoje > dom) return "";
+  if (P.fotosEm && P.fotosEm >= new Date(qui.getTime() - 3*864e5)) return "";
+  return `<div class="aviso-card"><h3>Hora das fotos de avaliação 📸</h3><p>É pelo mesmo formulário: as 4 fotos (frente, lado direito, lado esquerdo e costas) e o feedback do mês, que leva uns 2 minutinhos. Mesmo lugar, mesma luz e mesmo horário das outras vezes.</p><p>Mande até sábado: no domingo chega o seu relatório de evolução 📈</p>
+    <div class="acoes"><a class="btn amarelo" href="${FORM_FOTOS}" target="_blank" rel="noopener">Enviar as fotos</a><a class="btn" href="guia-fotos.pdf" target="_blank" rel="noopener">Como tirar as fotos</a></div></div>`;
+}
+function cardFimCiclo(hoje){
+  if (!P.fim || hoje > P.fim) return "";
+  const n = Math.round((P.fim - hoje) / 864e5); if (n > 7) return "";
+  return card(n === 0 ? "Seu ciclo termina hoje" : `Seu ciclo termina em ${n} ${n === 1 ? "dia" : "dias"}`,
+    `A revisão é em ${dd(P.fim)}. Continue anotando: o seu treinador usa tudo isso para montar o próximo treino.`);
 }
 function card(t, p, cls){ return `<div class="aviso-card ${cls||""}"><h3>${esc(t)}</h3><p>${esc(p)}</p></div>`; }
 
@@ -367,10 +422,11 @@ function render(){
         ${a ? `<div class="antes">Semana ${ant.semana}: ${a.reps} reps × ${fmt(a.kg)} kg</div>` : ""}
         <div class="confere" id="cf-${n}-${k}-${si}">${esc(confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa))}</div></div>`;
     }
-    const rec = recorde(d,k,ex), msg = recadoEx(d,k);
+    const rec = recorde(d,k,ex), msg = recadoEx(d,k), dica = dicaEx(d,k,ex.nome);
     h += `<article class="ex${exOk(d,k,ex) ? " ok" : ""}" id="ex-${n}-${k}">
       <div class="ex-top"><span class="num">${k}</span><div class="ex-nome"><h3>${esc(ex.nome)}</h3><p>${ex.series} ${ex.series === 1 ? "série" : "séries"} · ${esc(SEM.faixa)} reps</p>${ex.tecnica ? `<span class="tec">${esc(ex.tecnica)}</span>` : ""}</div></div>
       ${ex.obs ? `<div class="obs">${esc(ex.obs)}</div>` : ""}
+      ${dica ? `<div class="dica"><b>Dica do treinador${dica.semana !== semanaN ? ` (semana ${dica.semana})` : ""}:</b> ${esc(dica.texto)}</div>` : ""}
       <div class="recorde" id="rec-${n}-${k}" ${rec ? "" : "hidden"}>🏆 ${rec ? esc(rec.texto) : ""}</div>
       <div class="series">${s}</div>
       <div class="recado" id="rc-${n}-${k}" ${msg ? "" : "hidden"}><textarea id="m-${n}-${k}" maxlength="300" placeholder="Ex.: máquina ocupada, troquei pelo halter; senti o ombro na 3ª série">${esc(msg)}</textarea><small>O seu treinador vê este recado na sua planilha.</small></div>

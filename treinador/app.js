@@ -11,6 +11,9 @@ const NOMES = {DOM:"Domingo",SEG:"Segunda",TER:"Terça",QUA:"Quarta",QUI:"Quinta
 const OFFSET = {SEG:0,TER:1,QUA:2,QUI:3,SEX:4,SAB:5,DOM:6};
 const SEGUIDOS = {BISET:2, TRISET:3, "GIANT SET":99};
 const COL_RECADO = 14;
+const COL_DICA = 15;   // coluna P das abas Registro: dica do treinador (o aluno vê no app dele)
+const FORM_FOTOS = "https://forms.gle/Jc9hwKyR9xHa6WP17";
+const cardioValido = t => !!t && (/\d/.test(t) || !/^min,?\s*manter uma m[ée]dia de\s*bpm\.?$/i.test(t.replace(/\s+/g, " ").trim()));
 const DIA_MS = 864e5;
 
 const $ = id => document.getElementById(id);
@@ -158,6 +161,22 @@ function telaSemChave(){
   $("okch").onclick = () => { const v = $("ch").value.replace(/[^A-Za-z0-9]/g, ""); if (v.length >= 24){ guardar("t_chave", v); location.hash = "#/hoje"; location.reload(); } };
 }
 
+// ---------- WhatsApp: as mensagens são as de ferramentas/guia-consultoria/mensagens-whatsapp.md e da skill secretaria ----------
+const MSG = {
+  conversa: a => `Oi, ${primeiro(a.nome)}! `,
+  registro: (a, N) => `Oi, ${primeiro(a.nome)}! Como está sendo a semana de treino? 💪\n\nQuando terminar, me manda o PDF da semana ${N} preenchido. É com ele que eu acompanho a sua evolução e preparo a sua próxima semana 🙂`,
+  fotos: a => `Oi, ${primeiro(a.nome)}! Chegou o dia da sua reavaliação 📸\n\nÉ tudo pelo mesmo formulário:\n• as 4 fotos (lembra do Guia de fotos: mesmo lugar, mesma luz e mesmo horário)\n• o feedback do mês, que leva uns 2 minutinhos\n\n${FORM_FOTOS}\n\nMe manda até sábado, que no domingo te envio o seu relatório de evolução 📈`,
+  renovar: a => `${primeiro(a.nome)}, o seu ciclo está chegando ao fim 🎉 Foi muito bom acompanhar a sua evolução nessas semanas!\n\nBora para o próximo? Se você renovar, eu já monto o seu treino novo, ajustado com tudo o que a gente viu no seu relatório e nas suas fotos, pra começar na próxima segunda 💪`
+};
+const zap = (a, texto) => `https://wa.me/${a.whats}?text=${encodeURIComponent(texto)}`;
+function semanaACobrar(a){ const c = ciclo(a), u = (a.resumo || {}).ultima_semana || 0; return Math.max(1, Math.min(u + 1, c.concluidas || 1)); }
+function botoesZap(a){
+  if (!a.whats) return `<p class="sub">Sem número de WhatsApp na anamnese deste aluno.</p>`;
+  const b = (t, txt, amarelo) => `<a class="btn${amarelo ? " amarelo" : ""}" href="${esc(zap(a, txt))}" target="_blank" rel="noopener">${t}</a>`;
+  const c = ciclo(a), N = semanaACobrar(a);
+  return `<div class="acoes">${b("Abrir conversa", MSG.conversa(a))}${a.modelo === "novo" && c.concluidas ? b(`Cobrar o registro (semana ${N})`, MSG.registro(a, N)) : ""}${b("Pedir as fotos", MSG.fotos(a))}${c.revisao ? b("Perguntar se vai renovar", MSG.renovar(a)) : ""}</div>`;
+}
+
 // ---------- HOJE ----------
 function linhaAluno(a, direita){
   const [nivel, frase] = situacao(a), c = ciclo(a);
@@ -189,6 +208,14 @@ function telaHoje(){
   if (depois.length) h += `<details><summary>Próximos 7 dias (${depois.length})</summary><div class="lista" style="margin-top:8px">${depois.map(e => evento({...e, titulo: `${NOMES[SEMANA_JS[e.d.getDay()]].slice(0,3)} ${dd(e.d)} · ${e.titulo}`})).join("")}</div></details>`;
   h += `</section>`;
 
+  // renovações: revisão nos próximos 14 dias (ou que passou há até 14 dias)
+  const ren = alunos.map(a => [ciclo(a), a]).filter(([c]) => c.revisao && Math.abs(dias(hoje, c.revisao)) <= 14).sort((x,y) => x[0].revisao - y[0].revisao);
+  if (ren.length){
+    h += `<section class="secao"><header><h2>Renovações</h2><span class="cont">revisão em até 14 dias</span></header><div class="lista">${ren.map(([c,a]) => { const n = dias(hoje, c.revisao);
+      return `<div class="aluno"><span class="bola ${n <= 0 ? "atencao" : n <= 7 ? "aviso" : "ok"}"></span><span class="meio"><h3>${esc(a.nome)}</h3><p>${n > 0 ? `Revisão em ${plural(n, "dia")} (${dd(c.revisao)})` : n === 0 ? "Revisão hoje" : `A revisão foi há ${plural(-n, "dia")} (${dd(c.revisao)})`}</p></span>
+        ${a.whats ? `<a class="btn amarelo" href="${esc(zap(a, MSG.renovar(a)))}" target="_blank" rel="noopener">Perguntar</a>` : `<a class="btn" href="#/a/${a.chave}">Abrir</a>`}</div>`; }).join("")}</div></section>`;
+  }
+
   // atenção
   const at = alunos.map(a => [situacao(a), a]).filter(([s]) => s[0] === "atencao" || s[0] === "aviso").sort((x,y) => ORDEM_NIVEL[x[0][0]] - ORDEM_NIVEL[y[0][0]] || x[1].nome.localeCompare(y[1].nome));
   h += `<section class="secao"><header><h2>Pedem atenção</h2><span class="cont">${at.length} de ${alunos.length}</span></header>`;
@@ -206,7 +233,7 @@ function telaHoje(){
   const recs = []; alunos.forEach(a => { const c = ciclo(a); ((a.resumo && a.resumo.recordes) || []).filter(x => c.semana && x.semana >= c.semana - 1 && x.semana <= c.semana).forEach(x => recs.push({...x, a})); });
   if (recs.length){
     h += `<section class="secao"><header><h2>Recordes</h2><span class="cont">esta semana e a passada</span></header><div class="card">${recs.slice(-12).reverse().map(x =>
-      `<div class="recado"><small>${esc(primeiro(x.a.nome))} · semana ${x.semana}</small>🏆 ${esc(x.exercicio)}: ${fmt(x.kg)} kg × ${x.reps} (antes ${fmt(x.antes)} kg)</div>`).join("")}</div></section>`;
+      `<div class="recado"><small>${esc(primeiro(x.a.nome))} · semana ${x.semana}</small>🏆 ${esc(x.exercicio)} · ${esc(x.texto || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
   }
   $("tela").innerHTML = h;
 }
@@ -244,10 +271,20 @@ function telaAluno(chave, aba){
     <div><div class="eyebrow">${a.modalidade === "presencial" ? "Presencial" : "Consultoria online"}</div><h1>${esc(a.nome)}</h1></div>
     <div class="situ"><span class="bola ${nivel}"></span><span>${esc(frase)}</span></div>
     <nav class="abas" aria-label="Partes do aluno">${abas.map(([k,t]) => `<a href="#/a/${a.chave}/${k}" aria-current="${k === aba ? "page" : "false"}">${t}</a>`).join("")}</nav>
+    ${aba === "registrar" ? trocarAluno(a) : ""}
     <div id="corpo" class="wrap" style="width:100%"></div>`;
   $("tela").innerHTML = h;
   if (aba === "resumo") resumoAluno(a);
   else carregarAluno(a, () => aba === "evolucao" ? evolucaoAluno(a) : registrarAluno(a));
+}
+
+// no Registrar: os outros alunos com Protocolo, primeiro os do presencial que treinam hoje
+function trocarAluno(atual){
+  const d = SEMANA_JS[hojeZero().getDay()];
+  const nota = a => (a.modalidade === "presencial" ? 0 : 2) + (a.resumo && a.resumo.periodo && a.resumo.periodo[d] ? 0 : 1);
+  const outros = (INICIO.alunos || []).filter(a => a.protocolo && a.chave !== atual.chave).sort((x,y) => nota(x) - nota(y) || x.nome.localeCompare(y.nome));
+  if (!outros.length) return "";
+  return `<div class="trocar" aria-label="Trocar de aluno"><span class="sub">Trocar:</span>${outros.map(a => `<a class="chip-aluno${nota(a) === 0 ? " hoje" : ""}" href="#/a/${a.chave}/registrar">${esc(primeiro(a.nome))}${nota(a) === 0 ? " · hoje" : ""}</a>`).join("")}</div>`;
 }
 
 function resumoAluno(a){
@@ -276,6 +313,7 @@ function resumoAluno(a){
   if (a.calculos) links.push(`<a class="btn" href="${esc(a.calculos)}" target="_blank" rel="noopener">Cálculos metabólicos</a>`);
   if (a.pasta) links.push(`<a class="btn" href="${esc(a.pasta)}" target="_blank" rel="noopener">Pasta no Drive</a>`);
   h += `<div class="acoes">${links.join("")}</div>`;
+  h += `<section class="secao"><header><h2>WhatsApp</h2><span class="cont">mensagem pronta</span></header>${botoesZap(a)}</section>`;
 
   h += `<section class="secao"><header><h2>Minhas anotações</h2></header>
     <textarea class="nota" id="anot" placeholder="Ex.: dor no joelho esquerdo, evitar agachamento profundo; prefere treinar cedo; meta: 10 kg no stiff até dezembro">${esc(a.anotacao || "")}</textarea>
@@ -290,7 +328,7 @@ function resumoAluno(a){
   const rs = (r.recados || []).slice().sort((x,y) => y.semana - x.semana).slice(0, 8);
   if (rs.length) h += `<section class="secao"><header><h2>Recados do aluno</h2></header><div class="card">${rs.map(x => `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>“${esc(x.texto)}”</div>`).join("")}</div></section>`;
   if (rec.length) h += `<section class="secao"><header><h2>Recordes</h2><span class="cont">últimas 4 semanas</span></header><div class="card">${rec.slice().reverse().map(x =>
-      `<div class="recado"><small>Semana ${x.semana}</small>🏆 ${esc(x.exercicio)}: ${fmt(x.kg)} kg × ${x.reps} (antes ${fmt(x.antes)} kg)</div>`).join("")}</div></section>`;
+      `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>🏆 ${esc(x.texto || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
   if (a.lido_planilha_erro) h += `<p class="sub">${esc(a.lido_planilha_erro)}</p>`;
   $("corpo").innerHTML = h;
   $("salvarAnot").onclick = async () => {
@@ -349,7 +387,7 @@ function lerTreino(v){
       if (ra){ sem = []; for (let k = +ra[1]; k <= +ra[2]; k++) sem.push(k); }
       const ds = {};
       for (let i = 1; i <= 7; i++){ const d = cel(r+i,0), t = cel(r+i,1);
-        if (NOMES[d] && /\d/.test(t)) ds[d] = t.replace(/(\d+)\s*min/i,"$1 min").replace(/\s*em um[a]?\s*/i,", ").replace(/media/i,"média").replace(/(\d+)\s*bpm/i,"$1 bpm"); }
+        if (NOMES[d] && cardioValido(t)) ds[d] = t.replace(/(\d+)\s*min/i,"$1 min").replace(/\s*em um[a]?\s*/i,", ").replace(/media/i,"média").replace(/(\d+)\s*bpm/i,"$1 bpm"); }
       out.aerobicos.push({semanas: sem, dias: ds});
     }
   }
@@ -484,6 +522,9 @@ function aplicarOp(op){
     const reg = P.reg[op.aba] || (P.reg[op.aba] = []);
     op.linhas.forEach((row,i) => { const k = linhaReg(op.semana, i+1); const at = reg[k] || (reg[k] = []);
       for (let c = 0; c < 10; c++) at[c+1] = row[c] === "" ? "" : fmt(row[c]); });
+  } else if (op.tipo === "dica"){
+    const reg = P.reg[op.aba] || (P.reg[op.aba] = []);
+    op.dicas.forEach((t,i) => { const k = linhaReg(op.semana, i+1); (reg[k] || (reg[k] = []))[COL_DICA] = t; });
   } else if (op.tipo === "cardio") P.cardio[op.semana+"|"+op.dia] = {minutos: op.minutos, bpm: op.bpm, recado: op.recado};
 }
 function registrarAluno(a){
@@ -544,14 +585,40 @@ function recorde(d, k, ex){
   for (let s = 1; s <= ex.series; s++){ const r = reps(d,k,s), q = kg(d,k,s), a = ant && ant.series[s-1];
     if (confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa)) continue;
     if (r !== "" && r > 0) agora.push({reps: r, kg: q === "" ? 0 : q}); }
-  if (!agora.length) return null;
-  const maxAntes = Math.max(...antes.map(x => x.kg)), maxAgora = Math.max(...agora.map(x => x.kg));
-  if (maxAgora > maxAntes && maxAgora > 0){ const r = Math.max(...agora.filter(x => x.kg === maxAgora).map(x => x.reps));
-    return `Recorde de carga: ${fmt(maxAgora)} kg × ${r} (antes ${fmt(maxAntes)} kg)`; }
+  const rec = recordeDe(agora, antes);
+  return rec ? textoRecorde(rec) : null;
+}
+// Recordes: a mesma regra no app do treinador, no servidor (Treinador.gs) e no relatório (historico.py).
+// 1) Força: com séries de até 10 repetições (a estimativa só vale até 10), a força estimada da melhor série
+//    (Epley: kg × (1 + reps/30)) passa a melhor de antes.
+// 2) Sem isso: uma série que nenhuma de antes igualou (carga e reps iguais ou maiores) e que supera alguma de antes.
+function recordeDe(agora, antes){
+  agora = agora.filter(x => x.reps > 0); antes = antes.filter(x => x.reps > 0);
+  if (!agora.length || !antes.length) return null;
+  const e1 = x => x.kg * (1 + x.reps / 30);
+  const a10 = agora.filter(x => x.kg > 0 && x.reps <= 10), p10 = antes.filter(x => x.kg > 0 && x.reps <= 10);
+  if (a10.length && p10.length){
+    const m = a10.reduce((b,x) => e1(x) > e1(b) ? x : b), pm = Math.max(...p10.map(e1));
+    if (e1(m) > pm + 1e-9) return {tipo: "forca", kg: m.kg, reps: m.reps, e1: e1(m), antes: pm};
+  }
   let melhor = null;
-  agora.forEach(x => { const ref = antes.filter(y => y.kg >= x.kg); const mr = ref.length ? Math.max(...ref.map(y => y.reps)) : 0;
-    if (ref.length && x.reps > mr && (!melhor || x.kg > melhor.kg || (x.kg === melhor.kg && x.reps > melhor.reps))) melhor = {...x, antes: mr}; });
-  return melhor ? `Recorde de repetições: ${melhor.reps} com ${fmt(melhor.kg)} kg (antes ${melhor.antes})` : null;
+  agora.forEach(x => {
+    if (antes.some(p => p.kg >= x.kg && p.reps >= x.reps)) return;
+    if (!antes.some(p => x.kg >= p.kg && x.reps >= p.reps)) return;
+    if (!melhor || x.kg > melhor.kg || (x.kg === melhor.kg && x.reps > melhor.reps)) melhor = x;
+  });
+  if (!melhor) return null;
+  const pmax = Math.max(...antes.map(p => p.kg));
+  if (melhor.kg > pmax) return {tipo: "carga", kg: melhor.kg, reps: melhor.reps, antes: pmax};
+  const ref = antes.filter(p => p.kg >= melhor.kg).reduce((b,p) => p.reps > b.reps ? p : b);
+  return {tipo: "reps", kg: melhor.kg, reps: melhor.reps, antes: ref.reps, antesKg: ref.kg};
+}
+function textoRecorde(r){
+  const f1 = n => String(Math.round(n * 10) / 10).replace(".", ",");
+  if (r.tipo === "forca") return `Recorde de força: ${fmt(r.kg)} kg × ${r.reps} (força estimada ${f1(r.e1)} kg; antes ${f1(r.antes)} kg)`;
+  if (r.tipo === "carga") return `Recorde de carga: ${fmt(r.kg)} kg × ${r.reps} (antes ${fmt(r.antes)} kg)`;
+  if (r.kg > 0) return `Recorde de repetições: ${r.reps} com ${fmt(r.kg)} kg (antes ${r.antes}${r.antesKg !== r.kg ? ` com ${fmt(r.antesKg)} kg` : ""})`;
+  return `Recorde de repetições: ${r.reps} (antes ${r.antes})`;
 }
 function grupos(exs){ const tem = []; let i = 0;
   while (i < exs.length){ const t = exs[i].tecnica, tam = SEGUIDOS[t] || 1; let j = i;
@@ -575,13 +642,15 @@ function renderRegistro(){
     for (let si = 1; si <= ex.series; si++){ const a = ant && ant.series[si-1], r = reps(d,k,si), q = kg(d,k,si);
       s += `<div class="serie"><span>S${si}</span>${campo(`e${k}s${si}r`,"reps",r,lo)}${campo(`e${k}s${si}k`,"kg",q,a ? fmt(a.kg) : "0",true)}
         ${a ? `<div class="antes">Semana ${ant.semana}: ${a.reps} reps × ${fmt(a.kg)} kg</div>` : ""}<div class="confere" id="cf-${k}-${si}">${esc(confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa))}</div></div>`; }
-    const rec = recorde(d,k,ex), msg = recadoEx(d,k);
+    const rec = recorde(d,k,ex), msg = recadoEx(d,k), dica = txt(celula(d.aba, N, k, COL_DICA)), dAnt = dicaAnterior(ex.nome, N);
     h += `<article class="ex${exOk(d,k,ex) ? " ok" : ""}" id="ex-${k}"><div class="ex-top"><span class="num">${k}</span><div class="ex-nome"><h3>${esc(ex.nome)}</h3><p>${plural(ex.series, "série")} · ${esc(SEM.faixa)} reps</p>${ex.tecnica ? `<span class="tec">${esc(ex.tecnica)}</span>` : ""}</div></div>
       ${ex.obs ? `<div class="obs">${esc(ex.obs)}</div>` : ""}${msg ? `<div class="recmsg">Recado do aluno: “${esc(msg)}”</div>` : ""}
       <div class="recorde" id="rec-${k}" ${rec ? "" : "hidden"}>🏆 ${rec ? esc(rec) : ""}</div><div class="series">${s}</div>
       <div class="acoes">${ant ? `<button class="btn" type="button" data-repetir="${k}">Mesma carga da semana ${ant.semana}</button>` : ""}
         ${desc[i] ? `<button class="btn amarelo" type="button" data-desc="${esc(ex.nome)}">Descanso ${mmss(REST)}</button>` : `<span class="sub">Sem descanso: direto para o próximo.</span>`}
-        ${ex.video ? `<a class="btn" href="${esc(ex.video)}" target="_blank" rel="noopener">▶ Vídeo</a>` : ""}</div></article>`; });
+        ${ex.video ? `<a class="btn" href="${esc(ex.video)}" target="_blank" rel="noopener">▶ Vídeo</a>` : ""}
+        <button class="btn${dica ? " tem" : ""}" type="button" data-dica="${k}">💬 Dica para o aluno</button></div>
+      <div class="dicabox" id="dc-${k}" ${dica ? "" : "hidden"}><textarea id="dica-${k}" maxlength="300" placeholder="${esc(dAnt ? `Semana ${dAnt.semana}: ${dAnt.texto}` : "Ex.: semana que vem sobe 2 kg; desce em 3 segundos")}">${esc(dica)}</textarea><small>${esc(primeiro(RA.nome))} vê esta dica no app, na semana ${N}${dAnt && !dica ? `. Sem dica nova, continua valendo a da semana ${dAnt.semana}` : ""}.</small></div></article>`; });
   if (d.cardio){ const c = P.cardio[N+"|"+d.dia] || {};
     h += `<div class="ex"><div class="ex-top"><span class="num">♥</span><div class="ex-nome"><h3>Aeróbico</h3><p>${esc(d.cardio)}</p></div></div><div class="cardio">${campo("cmin","min",c.minutos ?? "","0")}${campo("cbpm","bpm",c.bpm ?? "","0")}</div>${c.recado ? `<div class="recmsg">Recado do aluno: “${esc(c.recado)}”</div>` : ""}</div>`; }
   h += `<p class="sub">Cada número vai sozinho para a planilha de ${esc(primeiro(RA.nome))} (abas Registro). Sem internet, fica guardado no celular e vai quando o sinal voltar.</p>`;
@@ -602,6 +671,21 @@ function ligarRegistro(){
   corpo.querySelectorAll("[data-repetir]").forEach(b => b.onclick = () => { const k = +b.dataset.repetir, ex = d.exercicios[k-1], ant = anterior(ex.nome, semanaN);
     (ant ? ant.series : []).forEach((a,si) => { if (!a || si >= ex.series) return; const el = $(`e${k}s${si+1}k`); if (el && el.value === ""){ el.value = fmt(a.kg); digitou(el); } }); });
   corpo.querySelectorAll("[data-desc]").forEach(b => b.onclick = () => iniciar(b.dataset.desc));
+  corpo.querySelectorAll("[data-dica]").forEach(b => b.onclick = () => {
+    if ((INICIO.versao || 0) < 4){ aviso("Para mandar dicas, cole antes o código novo do servidor (página Ligar o app do treinador)."); return; }
+    const box = $(`dc-${b.dataset.dica}`); box.hidden = !box.hidden; if (!box.hidden) $(`dica-${b.dataset.dica}`).focus(); });
+  corpo.querySelectorAll("textarea[id^=dica-]").forEach(t => t.addEventListener("input", () => escreveuDica(t)));
+}
+function dicaAnterior(nome, N){
+  for (let w = N - 1; w >= 1; w--) for (const L of Object.keys(P.reg)) for (let j = 1; j <= 9; j++){
+    const row = (P.reg[L]||[])[linhaReg(w,j)]; if (row && nomeDaLinha(row) === nome.trim() && txt(row[COL_DICA])) return {texto: txt(row[COL_DICA]), semana: w}; }
+  return null;
+}
+function escreveuDica(t){
+  const d = SEM.dias[atual], k = +t.id.split("-")[1], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
+  const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]); row[COL_DICA] = t.value;
+  const b = document.querySelector(`[data-dica="${k}"]`); if (b) b.classList.toggle("tem", !!t.value.trim());
+  enfileirar({tipo: "dica", aba: d.aba, semana: semanaN, dicas: d.exercicios.map((e,i) => txt(celula(d.aba, semanaN, i+1, COL_DICA)))});
 }
 function digitou(inp){
   const d = SEM.dias[atual], m = /^e(\d+)s(\d+)([rk])$/.exec(inp.id), c = /^c(min|bpm)$/.exec(inp.id), val = lerDigitado(inp.value);
@@ -633,7 +717,7 @@ function pararSemSalvar(){ /* a fila já guarda tudo; nada a fazer ao trocar de 
 let timerEnvio = null, enviando = false, tentativas = 0, gravacoes = 0;
 function enfileirar(op){
   op.aluno = RA.chave; op.nome = RA.nome;
-  const chave = op.tipo === "treino" ? `t|${op.aluno}|${op.aba}|${op.semana}` : `c|${op.aluno}|${op.semana}|${op.dia}`;
+  const chave = op.tipo === "treino" ? `t|${op.aluno}|${op.aba}|${op.semana}` : op.tipo === "dica" ? `d|${op.aluno}|${op.aba}|${op.semana}` : `c|${op.aluno}|${op.semana}|${op.dia}`;
   op.v = Date.now() + Math.random(); op.chave = chave; FILA[chave] = op;
   mostrarStatus(guardar("t_fila", FILA) ? "local" : "erro");
   clearTimeout(timerEnvio); timerEnvio = setTimeout(enviar, 1200);
@@ -719,7 +803,7 @@ async function atualizar(){
   try {
     const j = await chamar({acao: "t_inicio"}, 90000);
     if (gravacoes !== g0){ lendo = false; setTimeout(atualizar, 500); return; }
-    INICIO = {alunos: j.alunos, agenda: j.agenda, agendaErro: j.agendaErro || "", lido_em: j.lido_em}; ultimaLeitura = new Date(j.lido_em); guardar("t_inicio", INICIO);
+    INICIO = {alunos: j.alunos, agenda: j.agenda, agendaErro: j.agendaErro || "", versao: j.versao || 0, lido_em: j.lido_em}; ultimaLeitura = new Date(j.lido_em); guardar("t_inicio", INICIO);
     const r = rota(), foco = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (!(r.tela === "a" && r.aba !== "resumo") && !foco) render(false);
     else if (r.tela === "a" && r.aba === "registrar" && !$("corpo")) render(false);

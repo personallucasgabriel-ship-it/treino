@@ -1,10 +1,10 @@
 // Guarda a tela do app no celular para abrir sem internet. Os dados do treino ficam no app.js (localStorage).
 // Não mexe no app do treinador (pasta treinador/), que tem o seu próprio sw.js.
 // Mudou algum arquivo do site? Troque a VERSAO para os celulares pegarem a tela nova.
-const VERSAO = "treino-202611130444";
+const VERSAO = "treino-202611131018";
 const ARQUIVOS = ["./", "index.html", "app.js", "manifest.webmanifest",
   "icons/logo-horizontal.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
-  "fonts/archivo.woff2", "fonts/inter.woff2", "fonts/jetbrainsmono.woff2"];
+  "fonts/archivo.woff2", "fonts/inter.woff2", "fonts/jetbrainsmono.woff2", "guia-fotos.pdf"];
 const PRIMEIRO_REDE = /\/(index\.html|app\.js|manifest\.webmanifest)?$/;
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSAO).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting())); });
