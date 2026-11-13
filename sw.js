@@ -1,8 +1,8 @@
 // Guarda a tela do app no celular para abrir sem internet. Os dados do treino ficam no app.js (localStorage).
 // Mudou algum arquivo do site? Troque a VERSAO para os celulares pegarem a tela nova.
-const VERSAO = "treino-202611130339";
+const VERSAO = "treino-202611130345";
 const ARQUIVOS = ["./", "index.html", "app.js", "manifest.webmanifest",
-  "icons/simbolo.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
+  "icons/logo-horizontal.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
   "fonts/archivo.woff2", "fonts/inter.woff2", "fonts/jetbrainsmono.woff2"];
 const PRIMEIRO_REDE = /\/(index\.html|app\.js|manifest\.webmanifest)?$/;
 

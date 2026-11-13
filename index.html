@@ -37,7 +37,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{
 
 header{display:flex;flex-direction:column;gap:8px;padding-top:14px}
 .marca{display:flex;align-items:center;gap:10px}
-.marca img{width:28px;height:28px}
+.marca img{height:40px;width:auto;max-width:100%}
 .eyebrow{font-family:var(--f-titulo);font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--amarelo)}
 h1{font-family:var(--f-titulo);font-weight:900;font-size:32px;line-height:1;margin:2px 0 0;text-transform:uppercase;letter-spacing:-.01em}
 .meta{display:flex;gap:8px;flex-wrap:wrap}
@@ -130,7 +130,7 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
 <body>
 <div class="wrap">
   <header>
-    <div class="marca"><img src="icons/simbolo.svg" alt="" width="28" height="28"><span class="eyebrow">Consultoria · Treino</span></div>
+    <div class="marca"><img src="icons/logo-horizontal.svg" alt="Lucas Gabriel · Treinador" width="193" height="40"></div>
     <h1 id="nome">Treino da semana</h1>
     <div class="meta" id="meta" hidden>
       <span class="pill semnav"><button type="button" id="semAnt" aria-label="Semana anterior">‹</button>Semana <b id="semana"></b><small id="datas"></small><button type="button" id="semProx" aria-label="Próxima semana">›</button></span>
