@@ -1,13 +1,14 @@
 // Guarda a tela do app no celular para abrir sem internet. Os dados do treino ficam no app.js (localStorage).
+// Não mexe no app do treinador (pasta treinador/), que tem o seu próprio sw.js.
 // Mudou algum arquivo do site? Troque a VERSAO para os celulares pegarem a tela nova.
-const VERSAO = "treino-202611130345";
+const VERSAO = "treino-202611130437";
 const ARQUIVOS = ["./", "index.html", "app.js", "manifest.webmanifest",
   "icons/logo-horizontal.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
   "fonts/archivo.woff2", "fonts/inter.woff2", "fonts/jetbrainsmono.woff2"];
 const PRIMEIRO_REDE = /\/(index\.html|app\.js|manifest\.webmanifest)?$/;
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSAO).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting())); });
-self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSAO).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
+self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith("treino-") && k !== VERSAO).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 
 function daRede(req, ms){
   return new Promise((ok, falha) => {
@@ -18,6 +19,7 @@ function daRede(req, ms){
 self.addEventListener("fetch", e => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== location.origin) return;   // o servidor do Google passa direto
+  if (url.pathname.includes("/treinador/")) return;                       // o app do treinador tem o seu próprio sw.js
   const chave = req.mode === "navigate" ? "index.html" : req;
   if (req.mode === "navigate" || PRIMEIRO_REDE.test(url.pathname)) {
     // tela: tenta a rede (versão nova) por 3 segundos; sem sinal, usa a guardada
