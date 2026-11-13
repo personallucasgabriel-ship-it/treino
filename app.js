@@ -587,7 +587,11 @@ async function desenharStory(d){
   if (linhas.length > 9){ g.fillStyle = "#A3A196"; g.font = "600 34px Inter, Arial"; g.fillText(`+ ${linhas.length - 9} exercícios`, 90, y); y += 70; }
   if (recs.length){ g.fillStyle = "#FFD60A"; g.fillRect(90, Math.min(y + 10, 1640), W - 180, 110); g.fillStyle = "#0B0B0B"; g.font = "800 44px Archivo, Arial";
     g.fillText(recs.length === 1 ? "🏆 1 RECORDE HOJE" : `🏆 ${recs.length} RECORDES HOJE`, 130, Math.min(y + 10, 1640) + 72); }
-  g.fillStyle = "#A3A196"; g.font = "600 32px Inter, Arial"; g.fillText("Treino com acompanhamento · Lucas Gabriel Treinador", 90, H - 90);
+  // rodapé: "Consultoria •" e a logo
+  g.fillStyle = "#A3A196"; g.font = "600 34px Inter, Arial"; g.textBaseline = "middle";
+  const rot = "Consultoria  •  "; g.fillText(rot, 90, H - 110); g.textBaseline = "alphabetic";
+  try { const logo = await carregarImg("icons/logo-horizontal.svg"); const lw = 330, lh = lw * (logo.height || 40) / (logo.width || 193);
+    g.drawImage(logo, 90 + g.measureText(rot).width, H - 110 - lh / 2, lw, lh); } catch(e){}
   return await new Promise(ok => c.toBlob(ok, "image/png"));
 }
 
