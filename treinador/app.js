@@ -165,6 +165,8 @@ function telaSemChave(){
 // ---------- WhatsApp: as mensagens são as de ferramentas/guia-consultoria/mensagens-whatsapp.md e da skill secretaria ----------
 const MSG = {
   conversa: a => `Oi, ${primeiro(a.nome)}! `,
+  // "Treino chegou: app", com o link do app DESTE aluno (planilha de acessos; servidor versão 5)
+  treino: a => `${primeiro(a.nome)}, seu treino chegou! 🎉\n\nEle fica no seu app de treino, feito só pra você:\n${a.app}\n\nAbre no celular e coloca na tela inicial (o próprio app mostra como): ele fica com a minha logo e funciona até sem internet na academia.\n\nEm cada dia de treino, o app mostra os exercícios, o que você fez da última vez e o cronômetro de descanso. Anota as repetições e a carga de cada série: tudo chega direto pra mim, não precisa me mandar nada 😉\n\nNo fim do treino do dia, em *Ver o planejamento do ciclo*, você vê o seu ciclo completo, pra saber o caminho até o fim.\n\nE o mais importante: grava os exercícios *de lado ou de costas* e me manda aqui, principalmente os novos e quando a carga subir. É assim que eu corrijo a sua execução pra você não treinar errado 💪`,
   registro: (a, N) => `Oi, ${primeiro(a.nome)}! Como está sendo a semana de treino? 💪\n\nVi que faltam treinos anotados no app esta semana. Se você já treinou, anota lá as repetições e as cargas de cada série, tá? É com elas que eu acompanho a sua evolução e ajusto o seu treino 🙂`,
   fotos: a => `Oi, ${primeiro(a.nome)}! Chegou o dia da sua reavaliação 📸\n\nÉ tudo pelo mesmo formulário:\n• as 4 fotos (lembra do Guia de fotos: mesmo lugar, mesma luz e mesmo horário)\n• o feedback do mês, que leva uns 2 minutinhos\n\n${FORM_FOTOS}\n\nMe manda até sábado, que no domingo te envio o seu relatório de evolução 📈`,
   // umas 2 semanas antes do fim do plano; depois do fim, o lembrete curto
@@ -180,11 +182,17 @@ function fimDoPlano(c){
 }
 const zap = (a, texto) => `https://wa.me/${a.whats}?text=${encodeURIComponent(texto)}`;
 function semanaACobrar(a){ const c = ciclo(a), u = (a.resumo || {}).ultima_semana || 0; return Math.max(1, Math.min(u + 1, c.concluidas || 1)); }
+// link do app do aluno: só com o servidor na versão 5 ou mais nova
+function avisoApp(a){
+  if ((INICIO.versao || 0) < 5) return `<p class="sub">Para o botão "Enviar o treino" com o link do app de cada aluno, cole o código novo do servidor (página Ligar o app do treinador).</p>`;
+  if (!a.app && a.modelo !== "sem_protocolo") return `<p class="sub">Sem link do app: este aluno não está ativo na planilha "App dos alunos - acessos".</p>`;
+  return "";
+}
 function botoesZap(a){
-  if (!a.whats) return `<p class="sub">Sem número de WhatsApp na anamnese deste aluno.</p>`;
+  if (!a.whats) return `<p class="sub">Sem número de WhatsApp na anamnese deste aluno.</p>${avisoApp(a)}`;
   const b = (t, txt, amarelo) => `<a class="btn${amarelo ? " amarelo" : ""}" href="${esc(zap(a, txt))}" target="_blank" rel="noopener">${t}</a>`;
   const c = ciclo(a), N = semanaACobrar(a);
-  return `<div class="acoes">${b("Abrir conversa", MSG.conversa(a))}${a.modelo === "novo" && c.concluidas ? b(`Cobrar o registro (semana ${N})`, MSG.registro(a, N)) : ""}${b("Pedir as fotos", MSG.fotos(a))}${c.revisao ? b("Perguntar se vai renovar", MSG.renovar(a)) + b("Lembrar da renovação", MSG.lembrarRenovar(a)) : ""}</div>`;
+  return `<div class="acoes">${a.app ? b("Enviar o treino (link do app)", MSG.treino(a), true) : ""}${b("Abrir conversa", MSG.conversa(a))}${a.modelo === "novo" && c.concluidas ? b(`Cobrar o registro (semana ${N})`, MSG.registro(a, N)) : ""}${b("Pedir as fotos", MSG.fotos(a))}${c.revisao ? b("Perguntar se vai renovar", MSG.renovar(a)) + b("Lembrar da renovação", MSG.lembrarRenovar(a)) : ""}</div>${avisoApp(a)}`;
 }
 
 // ---------- HOJE ----------
@@ -217,6 +225,14 @@ function telaHoje(){
   h += INICIO.agendaErro ? `<p class="vazio">Não consegui ler a agenda: ${esc(INICIO.agendaErro)}</p>` : deHoje.length ? deHoje.map(evento).join("") : `<p class="vazio">Nenhuma tarefa de aluno ou de lead na agenda hoje.</p>`;
   if (depois.length) h += `<details><summary>Próximos 7 dias (${depois.length})</summary><div class="lista" style="margin-top:8px">${depois.map(e => evento({...e, titulo: `${NOMES[SEMANA_JS[e.d.getDay()]].slice(0,3)} ${dd(e.d)} · ${e.titulo}`})).join("")}</div></details>`;
   h += `</section>`;
+
+  // começam o treino: entrega de ontem até daqui a 7 dias (botão com o link do app de cada um)
+  const com = alunos.map(a => [ciclo(a), a]).filter(([c, a]) => c.entrega && a.modelo !== "sem_protocolo" && dias(hoje, c.entrega) >= -1 && dias(hoje, c.entrega) <= 7).sort((x,y) => x[0].entrega - y[0].entrega);
+  if (com.length){
+    h += `<section class="secao"><header><h2>Começam o treino</h2><span class="cont">mande o link do app</span></header><div class="lista">${com.map(([c,a]) => { const n = dias(hoje, c.entrega);
+      return `<div class="aluno"><span class="bola ${n <= 1 ? "aviso" : "ok"}"></span><span class="meio"><h3>${esc(a.nome)}</h3><p>${n > 1 ? `Começa em ${plural(n, "dia")} (${NOMES[SEMANA_JS[c.entrega.getDay()]].toLowerCase()}, ${dd(c.entrega)})` : n === 1 ? `Começa amanhã (${dd(c.entrega)})` : n === 0 ? "Começa hoje" : `Começou ontem (${dd(c.entrega)})`}</p></span>
+        ${a.whats && a.app ? `<a class="btn amarelo" href="${esc(zap(a, MSG.treino(a)))}" target="_blank" rel="noopener">Enviar o treino</a>` : `<a class="btn" href="#/a/${a.chave}">Abrir</a>`}</div>`; }).join("")}</div></section>`;
+  }
 
   // renovações: revisão nos próximos 14 dias (ou que passou há até 14 dias)
   const ren = alunos.map(a => [ciclo(a), a]).filter(([c]) => c.revisao && Math.abs(dias(hoje, c.revisao)) <= 14).sort((x,y) => x[0].revisao - y[0].revisao);
@@ -322,6 +338,7 @@ function resumoAluno(a){
   if (a.avaliacao) links.push(`<a class="btn" href="https://docs.google.com/spreadsheets/d/${esc(a.avaliacao)}/edit" target="_blank" rel="noopener">Avaliação física</a>`);
   if (a.calculos) links.push(`<a class="btn" href="${esc(a.calculos)}" target="_blank" rel="noopener">Cálculos metabólicos</a>`);
   if (a.pasta) links.push(`<a class="btn" href="${esc(a.pasta)}" target="_blank" rel="noopener">Pasta no Drive</a>`);
+  if (a.app) links.push(`<a class="btn" href="${esc(a.app)}" target="_blank" rel="noopener">App do aluno</a>`);
   h += `<div class="acoes">${links.join("")}</div>`;
   h += `<section class="secao"><header><h2>WhatsApp</h2><span class="cont">mensagem pronta</span></header>${botoesZap(a)}</section>`;
 
