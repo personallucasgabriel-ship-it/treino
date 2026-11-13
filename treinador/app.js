@@ -373,7 +373,7 @@ async function carregarAluno(a, depois){
   else corpo.innerHTML = `<p class="carregando">Abrindo a planilha de ${esc(primeiro(a.nome))}…</p>`;
   try {
     const d = await chamar({acao: "t_aluno", aluno: a.chave});
-    const mudou = !guardado || JSON.stringify([d.treino, d.reg, d.cardio, d.avaliacao]) !== JSON.stringify([guardado.treino, guardado.reg, guardado.cardio, guardado.avaliacao]);
+    const mudou = !guardado || JSON.stringify([d.treino, d.reg, d.cardio, d.avaliacao, d.grupos]) !== JSON.stringify([guardado.treino, guardado.reg, guardado.cardio, guardado.avaliacao, guardado.grupos]);
     DADOS[a.chave] = d; guardar("t_aluno:" + a.chave, d);
     const r = rota(); if (r.tela !== "a" || r.chave !== a.chave) return;
     if (mudou){ const foco = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName); if (!foco) depois(); else precisaRender = true; }
@@ -435,6 +435,28 @@ function evolucaoPorExercicio(reg){
   } });
   return Object.values(ex).filter(e => Object.keys(e.semanas).length);
 }
+// volume de cada grupamento muscular por semana. O grupamento vem da aba VIDEOS (servidor versão 7): coluna D = principal
+// (conta inteiro), coluna E = secundário (conta metade), a mesma regra da tabela "Volume semanal" da aba Treino.
+// "Todos" soma cada exercício uma vez só (igual ao volume total). Série feita = série com reps anotadas.
+const chaveNome = s => txt(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ");
+function volumePorGrupo(reg, grupos){
+  const mapa = {}; (grupos || []).forEach(g => { if (txt(g[0]) && txt(g[1])) mapa[chaveNome(g[0])] = [txt(g[1]), txt(g[2])]; });
+  const total = {}, por = {}, sem = new Set();
+  const somar = (alvo, w, kg, n, peso) => { const x = alvo[w] || (alvo[w] = {kg: 0, series: 0}); x.kg += kg * peso; x.series += n * peso; };
+  Object.keys(reg || {}).forEach(L => { for (let w = 1; w <= 12; w++) for (let k = 1; k <= 9; k++){
+    const row = (reg[L]||[])[linhaReg(w,k)]; const nome = nomeDaLinha(row); if (!nome) continue;
+    let kg = 0, n = 0;
+    for (let s = 0; s < 5; s++){ const r = lerPlanilha(row[1+2*s]), q = lerPlanilha(row[2+2*s]); if (!(r > 0)) continue; n++; kg += r * (q === "" ? 0 : q); }
+    if (!n) continue;
+    somar(total, w, kg, n, 1);
+    const g = mapa[chaveNome(nome)];
+    if (!g){ sem.add(nome); continue; }
+    somar(por[g[0]] || (por[g[0]] = {}), w, kg, n, 1);
+    if (g[1] && g[1] !== g[0]) somar(por[g[1]] || (por[g[1]] = {}), w, kg, n, .5);
+  } });
+  return {total, por, sem: [...sem].sort((x,y) => x.localeCompare(y))};
+}
+const kgTxt = n => Math.round(n).toLocaleString("pt-BR");
 function grafico(pontos, opt){
   // um gráfico de linha (uma série só): pontos [{x: rótulo, y, dica}]
   if (!pontos.length) return `<p class="vazio">Ainda sem números.</p>`;
@@ -465,9 +487,7 @@ function evolucaoAluno(a){
   const d = DADOS[a.chave], r = a.resumo || {}, c = ciclo(a); let h = "";
   if (d.reg){
     const exs = evolucaoPorExercicio(d.reg);
-    const volSem = {}; exs.forEach(e => Object.entries(e.semanas).forEach(([w,x]) => volSem[w] = (volSem[w] || 0) + x.volume));
-    const vs = Object.keys(volSem).map(Number).sort((x,y) => x-y);
-    h += `<section class="secao"><header><h2>Volume total</h2><span class="cont">reps × kg, por semana</span></header><div class="card">${grafico(vs.map(w => ({x: "S" + w, y: Math.round(volSem[w]), dica: `Semana ${w}: ${Math.round(volSem[w]).toLocaleString("pt-BR")} kg`})), {titulo: "Volume total por semana", zero: true})}</div></section>`;
+    h += volumeHtml(a, d, c);
     if (r.freq && c.concluidas){
       const ws = r.freq.filter(x => x.semana <= c.concluidas && x.previstos);
       if (ws.length) h += `<section class="secao"><header><h2>Frequência</h2><span class="cont">% dos treinos feitos</span></header><div class="card">${grafico(ws.map(x => ({x: "S" + x.semana, y: Math.round(100 * x.feitos / x.previstos), dica: `Semana ${x.semana}: ${x.feitos} de ${x.previstos} treinos`})), {titulo: "Frequência por semana", zero: true, max: 100, sufixo: "%"})}</div></section>`;
@@ -485,6 +505,7 @@ function evolucaoAluno(a){
   } else if (a.protocolo) h += `<div class="card"><p class="vazio">Este Protocolo é do modelo antigo (sem abas Registro). As cargas ficam no Controle de carga.</p></div>`;
   h += avaliacaoHtml(d);
   $("corpo").innerHTML = h;
+  ligarVolume(a, d);
   const sel = $("exSel");
   if (sel){
     const desenhar = () => { const e = evolucaoPorExercicio(d.reg).find(x => x.nome === sel.value); if (!e) return; guardar("t_ex:" + a.chave, e.nome);
@@ -494,6 +515,52 @@ function evolucaoAluno(a){
     sel.onchange = desenhar; desenhar();
   }
   ligarDicas($("corpo"));
+}
+// seção Volume da Evolução: filtro por grupamento muscular (Todos, Peito, Costas…) e medida (reps × kg ou séries feitas)
+function volumeHtml(a, d, c){
+  const V = volumePorGrupo(d.reg, d.grupos), vs = Object.keys(V.total).map(Number).sort((x,y) => x-y);
+  if (!vs.length) return "";
+  const nomes = Object.keys(V.por).sort((x,y) => x.localeCompare(y, "pt-BR"));
+  const temGrupos = Array.isArray(d.grupos);
+  let h = `<section class="secao"><header><h2>Volume</h2><span class="cont" id="volCont"></span></header><div class="card">`;
+  if (nomes.length) h += `<div class="filtros grupos" role="group" aria-label="Grupamento muscular">${["Todos"].concat(nomes).map(g => `<button type="button" data-g="${esc(g)}">${esc(g)}</button>`).join("")}</div>`;
+  h += `<div class="filtros medida" role="group" aria-label="Medir em">${[["kg","Volume (reps × kg)"],["series","Séries feitas"]].map(([k,t]) => `<button type="button" data-m="${k}">${t}</button>`).join("")}</div>
+    <div id="volGraf"></div><p class="sub" id="volNota"></p>`;
+  if (!temGrupos) h += `<p class="sub">Para filtrar por grupamento muscular, cole o código novo do servidor (página Ligar o app do treinador, versão 7).</p>`;
+  else if (!nomes.length) h += `<p class="sub">A aba VIDEOS desta planilha não tem o grupamento dos exercícios (colunas D e E).</p>`;
+  h += `</div></section>`;
+  if (!nomes.length) return h;
+  // tabela: 1ª semana com números → última semana completa (a semana em andamento ainda não fechou)
+  const fechadas = vs.filter(w => w <= (c.concluidas || 0)), ini = vs[0], fim = (fechadas.length ? fechadas : vs).slice(-1)[0];
+  const linhas = nomes.map(g => { const p = V.por[g][ini] || {kg: 0, series: 0}, u = V.por[g][fim] || {kg: 0, series: 0};
+    const v = p.kg > 0 && fim !== ini ? Math.round(100 * (u.kg - p.kg) / p.kg) : null;
+    return `<tr data-g="${esc(g)}"><td>${esc(g)}</td><td>${fmt(u.series)}</td><td>${kgTxt(p.kg)}</td><td>${kgTxt(u.kg)}</td><td class="${v > 0 ? "sobe" : v < 0 ? "desce" : ""}">${v == null ? "—" : (v > 0 ? "+" : "") + v + "%"}</td></tr>`; }).join("");
+  h += `<section class="secao"><header><h2>Por grupamento</h2><span class="cont">semana ${ini} → ${fim}</span></header><div class="card"><div class="tabela"><table><thead><tr><th>Grupamento</th><th>Séries S${fim}</th><th>kg S${ini}</th><th>kg S${fim}</th><th>Variação</th></tr></thead><tbody>${linhas}</tbody></table></div>
+    <p class="sub">Volume = reps × kg. O grupamento vem da aba VIDEOS: o principal conta inteiro e o secundário, metade (igual à tabela Volume semanal da planilha).${V.sem.length ? ` Sem grupamento na aba VIDEOS (só entram em Todos): ${esc(V.sem.join(", "))}.` : ""}</p></div></section>`;
+  return h;
+}
+function ligarVolume(a, d){
+  const caixa = $("volGraf"); if (!caixa) return;
+  const V = volumePorGrupo(d.reg, d.grupos), vs = Object.keys(V.total).map(Number).sort((x,y) => x-y);
+  let g = ler("t_grupo:" + a.chave) || "Todos", m = ler("t_vol_medida") || "kg";
+  const desenhar = () => {
+    if (g !== "Todos" && !V.por[g]) g = "Todos";
+    const serie = g === "Todos" ? V.total : V.por[g];
+    document.querySelectorAll("[data-g]").forEach(b => b.tagName === "BUTTON" ? b.setAttribute("aria-pressed", b.dataset.g === g) : b.classList.toggle("escolhido", b.dataset.g === g));
+    document.querySelectorAll("[data-m]").forEach(b => b.setAttribute("aria-pressed", b.dataset.m === m));
+    const nome = g === "Todos" ? "Volume total" : g;
+    $("volCont").textContent = (m === "kg" ? "reps × kg" : "séries feitas") + ", por semana";
+    caixa.innerHTML = grafico(vs.map(w => { const x = serie[w] || {kg: 0, series: 0};
+      return {x: "S" + w, y: m === "kg" ? Math.round(x.kg) : Math.round(x.series * 10) / 10, dica: `Semana ${w}: ${kgTxt(x.kg)} kg · ${fmt(x.series)} ${x.series === 1 ? "série" : "séries"}`}; }),
+      {titulo: `${nome} por semana`, zero: true});
+    const ultimo = serie[vs[vs.length - 1]] || {kg: 0, series: 0};
+    $("volNota").textContent = `${nome} na semana ${vs[vs.length - 1]}: ${kgTxt(ultimo.kg)} kg em ${fmt(ultimo.series)} ${ultimo.series === 1 ? "série" : "séries"}.`;
+    ligarDicas(caixa);
+  };
+  document.querySelectorAll("button[data-g], tr[data-g]").forEach(b => b.onclick = () => { g = b.dataset.g; guardar("t_grupo:" + a.chave, g); desenhar();
+    if (b.tagName === "TR") caixa.closest(".secao").scrollIntoView({behavior: "smooth", block: "start"}); });
+  document.querySelectorAll("[data-m]").forEach(b => b.onclick = () => { m = b.dataset.m; guardar("t_vol_medida", m); desenhar(); });
+  desenhar();
 }
 // planilha "Avaliação <Nome>", aba Avaliações (B10:I52): rótulo na coluna B, avaliações de D a I
 function avaliacaoHtml(d){
@@ -887,7 +954,7 @@ async function atualizar(){
     INICIO = {alunos: j.alunos, agenda: j.agenda, agendaErro: j.agendaErro || "", versao: j.versao || 0, lido_em: j.lido_em}; ultimaLeitura = new Date(j.lido_em); guardar("t_inicio", INICIO);
     const r = rota(), foco = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (!(r.tela === "a" && r.aba !== "resumo") && !foco) render(false);
-    else if (r.tela === "a" && r.aba === "registrar" && !$("corpo")) render(false);
+    else if (r.tela === "a" && !$("corpo")) render(false);   // 1ª leitura com o app aberto num aluno (Evolução ou Registrar)
     mostrarStatus(Object.keys(FILA).length ? "local" : "ok");
     enviar();
   } catch(e){

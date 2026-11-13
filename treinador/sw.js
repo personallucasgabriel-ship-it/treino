@@ -1,6 +1,6 @@
 // Guarda a tela do app do treinador no celular para abrir sem internet (os dados ficam no app.js, localStorage).
 // Mudou algum arquivo? O publicar-site.sh troca a VERSAO sozinho.
-const VERSAO = "treinador-202611131621";
+const VERSAO = "treinador-202611132039";
 const ARQUIVOS = ["./", "index.html", "app.js", "manifest.webmanifest",
   "../icons/logo-horizontal.svg", "../icons/icon-192.png", "../icons/icon-512.png", "../icons/icon-maskable-512.png", "../icons/apple-touch-icon.png", "../icons/favicon-32.png",
   "../fonts/archivo.woff2", "../fonts/inter.woff2", "../fonts/jetbrainsmono.woff2"];

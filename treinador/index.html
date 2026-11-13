@@ -78,6 +78,11 @@ h3{margin:0;font-size:16px;font-weight:600;line-height:1.25}
 .filtros{display:flex;gap:6px;flex-wrap:wrap}
 .filtros button{border:1px solid var(--linha);background:var(--carvao);border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600}
 .filtros button[aria-pressed="true"]{background:var(--amarelo);color:var(--preto);border-color:var(--amarelo)}
+.card .filtros button:not([aria-pressed="true"]){background:var(--preto)}
+.filtros.medida button{padding:5px 10px;font-size:12px}
+.filtros.medida button[aria-pressed="true"]{background:var(--branco);color:var(--preto);border-color:var(--branco)}
+tr[data-g]{cursor:pointer}
+tr[data-g].escolhido td{color:var(--amarelo)}
 .busca{width:100%;background:var(--carvao);border:1px solid var(--linha);border-radius:12px;padding:11px 12px;color:var(--branco);font:inherit}
 .evento{border-left:4px solid var(--amarelo)}
 .evento.cor-11{border-left-color:var(--vermelho)}.evento.cor-6{border-left-color:var(--laranja)}.evento.cor-5{border-left-color:var(--amarelo)}
