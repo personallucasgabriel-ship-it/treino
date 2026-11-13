@@ -752,8 +752,8 @@ function digitou(inp){
   contagem();
   document.querySelectorAll("[data-dia]").forEach(b => b.classList.toggle("feito", diaFeito(+b.dataset.dia)));
 }
-// PSE de cada série, de 0 a 10 (igual ao app do aluno). Escala de PSE por repetições na reserva, Zourdos e cols. 2016
-// (doi:10.1519/JSC.0000000000001049): PSE 10 = nenhuma repetição sobrando, 9 = 1, 8 = 2 e assim por diante.
+// PSE de cada série, de 0 a 10 (igual ao app do aluno): escala só de esforço, a CR-10 modificada por Foster e cols. 2001
+// (0 repouso … 5 difícil, 7 muito difícil, 10 máximo; tabela em Haddad e cols. 2017, doi:10.3389/fnins.2017.00612).
 const comPse = () => ((INICIO && INICIO.versao) || 0) >= PSE_DESDE;
 function pse(d, k, s){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_PSE + s)); return v === "" || v < 0 || v > 10 ? "" : v; }
 function confereSerie(d, k, s){

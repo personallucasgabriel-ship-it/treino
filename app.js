@@ -202,8 +202,10 @@ function diaFeito(n){ const d = SEM.dias[n]; if (!d) return false;
   if (d.exercicios.length) return d.exercicios.every((ex,i) => exOk(d,i+1,ex));
   const c = P.cardio[semanaN+"|"+d.dia]; return !!(c && c.minutos !== ""); }
 // PSE (percepção subjetiva de esforço) de cada série, de 0 a 10 (pedido de 13/11/2026, no lugar das "reps que sobravam"
-// só na última série). Âncoras da escala de PSE por repetições na reserva, Zourdos e cols. 2016
-// (doi:10.1519/JSC.0000000000001049): PSE 10 = nenhuma repetição sobrando, 9 = 1, 8 = 2 e assim por diante.
+// só na última série). Escala só de esforço, sem repetições na reserva (pedido do criador): a CR-10 modificada por
+// Foster e cols. 2001 (0 repouso, 1 muito, muito fácil, 2 fácil, 3 moderado, 4 um pouco difícil, 5 difícil, 7 muito difícil,
+// 10 máximo; 6, 8 e 9 sem nome; tabela em Haddad e cols. 2017, doi:10.3389/fnins.2017.00612), usada série a série
+// no treino de força por Day e cols. 2004 (doi:10.1519/R-13113.1).
 // O recado explica a PSE como o esforço feito, sem misturar dor nem cansaço: a percepção de esforço é diferente
 // dessas sensações e misturá-las muda a nota (Pageaux 2016, doi:10.1080/17461391.2016.1188992; Halperin e Emanuel 2020,
 // doi:10.1007/s40279-019-01229-z; Bergevin e cols. 2022, doi:10.1007/s40279-022-01762-4).
@@ -211,9 +213,9 @@ const comPse = () => (P && P.versao || 0) >= PSE_DESDE;
 function pse(d, k, s){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_PSE + s)); return v === "" || v < 0 || v > 10 ? "" : v; }
 function guiaPse(){
   // recado pequeno e sempre à vista (pedido de 13/11/2026); a escala completa abre no "Ver a escala"
-  return `<details class="guia-pse"><summary><b>PSE</b> é o quanto você se esforçou na série, de 0 (nenhum esforço) a 10 (esforço máximo: não saía mais nenhuma repetição). Não conte dor nem cansaço, só o esforço. <span class="ver"><span class="abrir">Ver a escala</span><span class="fechar">Fechar</span></span></summary>
-    <dl><dt>10</dt><dd>esforço máximo: não saía mais nenhuma repetição</dd><dt>9</dt><dd>sobrava 1 repetição</dd><dt>8</dt><dd>sobravam 2</dd><dt>7</dt><dd>sobravam 3</dd>
-    <dt>5 a 6</dt><dd>sobravam 4 a 6</dd><dt>3 a 4</dt><dd>esforço leve</dd><dt>0 a 2</dt><dd>quase nenhum esforço</dd></dl></details>`;
+  return `<details class="guia-pse"><summary><b>PSE</b> é o quanto você se esforçou na série, de 0 (repouso) a 10 (esforço máximo). Não conte dor nem cansaço, só o esforço. <span class="ver"><span class="abrir">Ver a escala</span><span class="fechar">Fechar</span></span></summary>
+    <dl><dt>0</dt><dd>repouso</dd><dt>1</dt><dd>muito, muito fácil</dd><dt>2</dt><dd>fácil</dd><dt>3</dt><dd>moderado</dd><dt>4</dt><dd>um pouco difícil</dd>
+    <dt>5</dt><dd>difícil</dd><dt>7</dt><dd>muito difícil</dd><dt>10</dt><dd>máximo</dd></dl><p class="entre">6, 8 e 9 ficam entre as palavras.</p></details>`;
 }
 function diaComAlgo(d){ return d.exercicios.some((ex,i) => { for (let s = 1; s <= ex.series; s++) if (reps(d,i+1,s) !== "") return true; return false; }); }
 
