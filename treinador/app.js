@@ -102,7 +102,7 @@ function situacao(a){
   if (hoje < c.entrega) return ["ok", `O treino começa em ${dd(c.entrega)}`];
   if (c.revisao && hoje >= c.revisao){
     const n = dias(c.revisao, hoje);
-    return ["atencao", n === 0 ? "A revisão é hoje: perguntar se vai renovar" : `O ciclo acabou há ${tempo(n)} (revisão em ${dd(c.revisao)}): renovou ou parou?`];
+    return ["atencao", n === 0 ? "A revisão é hoje: o aluno vai renovar?" : `O ciclo acabou há ${tempo(n)} (revisão em ${dd(c.revisao)}): renovou ou parou?`];
   }
   let nivel, frase;
   if (a.modelo === "antigo"){
@@ -167,15 +167,24 @@ const MSG = {
   conversa: a => `Oi, ${primeiro(a.nome)}! `,
   registro: (a, N) => `Oi, ${primeiro(a.nome)}! Como está sendo a semana de treino? 💪\n\nVi que faltam treinos anotados no app esta semana. Se você já treinou, anota lá as repetições e as cargas de cada série, tá? É com elas que eu acompanho a sua evolução e ajusto o seu treino 🙂`,
   fotos: a => `Oi, ${primeiro(a.nome)}! Chegou o dia da sua reavaliação 📸\n\nÉ tudo pelo mesmo formulário:\n• as 4 fotos (lembra do Guia de fotos: mesmo lugar, mesma luz e mesmo horário)\n• o feedback do mês, que leva uns 2 minutinhos\n\n${FORM_FOTOS}\n\nMe manda até sábado, que no domingo te envio o seu relatório de evolução 📈`,
-  renovar: a => `${primeiro(a.nome)}, o seu ciclo está chegando ao fim 🎉 Foi muito bom acompanhar a sua evolução nessas semanas!\n\nBora para o próximo? Se você renovar, eu já monto o seu treino novo, ajustado com tudo o que a gente viu no seu relatório e nas suas fotos, pra começar na próxima segunda 💪`
+  // umas 2 semanas antes do fim do plano; depois do fim, o lembrete curto
+  renovar: a => { const fim = fimDoPlano(ciclo(a)); if (!fim || hojeZero() > fim) return MSG.lembrarRenovar(a);
+    return `Oi, ${primeiro(a.nome)}! Tudo bem? 😊\n\nPassando com antecedência pra você se organizar: o seu plano vai até domingo, dia ${dd(fim)}. Estamos na reta final do ciclo! 🏁\n\nFoi muito bom acompanhar a sua evolução até aqui 💪 E o próximo ciclo não começa do zero: eu monto o treino novo em cima da sua reavaliação de fim de ciclo (fotos e relatório), com o que você já conquistou e o que ainda dá pra melhorar.\n\nConfirmando agora, dá tempo de eu preparar tudo com calma: o treino novo chega nesse mesmo domingo e você já começa na segunda, sem ficar nem um dia parado.\n\nBora pro próximo? Me fala se vai seguir no mesmo plano ou se prefere trocar de plano, que eu te mando o link pra renovar 🙂\n\nE se tiver alguma coisa que você quer mudar no próximo ciclo (dias de treino, foco, algum exercício), me conta também!`; },
+  lembrarRenovar: a => `Oi, ${primeiro(a.nome)}! Conseguiu pensar no próximo ciclo? 😊 Me fala se vai seguir comigo, que eu já deixo o seu treino novo pronto 💪`
 };
+// domingo em que o plano acaba: o da semana da revisão (revisão numa segunda = começo do ciclo seguinte), como na skill secretaria
+function fimDoPlano(c){
+  if (!c.revisao) return null;
+  const fim = new Date(c.revisao.getTime() - (c.revisao.getDay() === 1 ? DIA_MS : 0));
+  return new Date(fim.getFullYear(), fim.getMonth(), fim.getDate() + (7 - fim.getDay()) % 7);
+}
 const zap = (a, texto) => `https://wa.me/${a.whats}?text=${encodeURIComponent(texto)}`;
 function semanaACobrar(a){ const c = ciclo(a), u = (a.resumo || {}).ultima_semana || 0; return Math.max(1, Math.min(u + 1, c.concluidas || 1)); }
 function botoesZap(a){
   if (!a.whats) return `<p class="sub">Sem número de WhatsApp na anamnese deste aluno.</p>`;
   const b = (t, txt, amarelo) => `<a class="btn${amarelo ? " amarelo" : ""}" href="${esc(zap(a, txt))}" target="_blank" rel="noopener">${t}</a>`;
   const c = ciclo(a), N = semanaACobrar(a);
-  return `<div class="acoes">${b("Abrir conversa", MSG.conversa(a))}${a.modelo === "novo" && c.concluidas ? b(`Cobrar o registro (semana ${N})`, MSG.registro(a, N)) : ""}${b("Pedir as fotos", MSG.fotos(a))}${c.revisao ? b("Perguntar se vai renovar", MSG.renovar(a)) : ""}</div>`;
+  return `<div class="acoes">${b("Abrir conversa", MSG.conversa(a))}${a.modelo === "novo" && c.concluidas ? b(`Cobrar o registro (semana ${N})`, MSG.registro(a, N)) : ""}${b("Pedir as fotos", MSG.fotos(a))}${c.revisao ? b("Perguntar se vai renovar", MSG.renovar(a)) + b("Lembrar da renovação", MSG.lembrarRenovar(a)) : ""}</div>`;
 }
 
 // ---------- HOJE ----------
