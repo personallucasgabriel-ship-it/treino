@@ -11,7 +11,8 @@ const NOMES = {DOM:"Domingo",SEG:"Segunda",TER:"Terça",QUA:"Quarta",QUI:"Quinta
 const OFFSET = {SEG:0,TER:1,QUA:2,QUI:3,SEX:4,SAB:5,DOM:6};
 const SEGUIDOS = {BISET:2, TRISET:3, "GIANT SET":99};
 const COL_RECADO = 14;
-const COL_ESFORCO = 16;   // coluna Q: repetições que ainda sobravam na última série (0 a 4)
+const COL_PSE = 15;      // colunas Q a U: PSE (0 a 10) de cada série; série s na coluna COL_PSE + s (desde 13/11/2026)
+const PSE_DESDE = 6;     // versão do servidor que grava a PSE
 const COL_DICA = 15;   // coluna P das abas Registro: dica do treinador (o aluno vê no app dele)
 const FORM_FOTOS = "https://forms.gle/Jc9hwKyR9xHa6WP17";
 const cardioValido = t => !!t && (/\d/.test(t) || !/^min,?\s*manter uma m[ée]dia de\s*bpm\.?$/i.test(t.replace(/\s+/g, " ").trim()));
@@ -549,7 +550,7 @@ function aplicarOp(op){
     const reg = P.reg[op.aba] || (P.reg[op.aba] = []);
     op.linhas.forEach((row,i) => { const k = linhaReg(op.semana, i+1); const at = reg[k] || (reg[k] = []);
       for (let c = 0; c < 10; c++) at[c+1] = row[c] === "" ? "" : fmt(row[c]);
-      if (op.esforco) at[COL_ESFORCO] = op.esforco[i] === "" || op.esforco[i] == null ? "" : String(op.esforco[i]); });
+      if (op.pse) for (let s = 1; s <= 5; s++){ const v = (op.pse[i]||[])[s-1]; at[COL_PSE+s] = v === "" || v == null ? "" : String(v); } });
   } else if (op.tipo === "dica"){
     const reg = P.reg[op.aba] || (P.reg[op.aba] = []);
     op.dicas.forEach((t,i) => { const k = linhaReg(op.semana, i+1); (reg[k] || (reg[k] = []))[COL_DICA] = t; });
@@ -591,7 +592,8 @@ function historico(nome, N){
   for (let w = 1; w < N; w++){
     const series = [];
     Object.keys(P.reg).forEach(L => { for (let k = 1; k <= 9; k++){ const row = (P.reg[L]||[])[linhaReg(w,k)]; if (!row || nomeDaLinha(row) !== nome.trim()) continue;
-      for (let s = 0; s < 5; s++){ const r = lerPlanilha(row[1+2*s]), q = lerPlanilha(row[2+2*s]); if (r !== "" && r > 0) series.push({reps: r, kg: q === "" ? 0 : q, s}); } } });
+      for (let s = 0; s < 5; s++){ const r = lerPlanilha(row[1+2*s]), q = lerPlanilha(row[2+2*s]), p = lerPlanilha(row[COL_PSE+1+s]);
+        if (r !== "" && r > 0) series.push({reps: r, kg: q === "" ? 0 : q, s, pse: p !== "" && p >= 0 && p <= 10 ? p : ""}); } } });
     if (series.length) semanas.push({semana: w, series});
   }
   return semanas;
@@ -664,17 +666,17 @@ function renderRegistro(){
   h += `<nav class="dias" role="tablist" aria-label="Dias">${SEM.dias.map((d,n) => `<button type="button" class="dia${diaFeito(n) ? " feito" : ""}${estaSemana && d.dia === hoje ? " hoje" : ""}" role="tab" aria-selected="${n === atual}" data-dia="${n}"><small>${estaSemana && d.dia === hoje ? "HOJE" : d.dia}</small><strong>${d.treino || "♥"}</strong></button>`).join("")}</nav>`;
   const d = SEM.dias[atual];
   if (!d){ corpo.innerHTML = h + `<p class="vazio">Nenhum treino na periodização desta semana.</p>`; ligarRegistro(); return; }
-  const dt = dataDoDia(N, d.dia), REST = descanso(SEM.faixa), desc = grupos(d.exercicios), lo = (SEM.faixa||"").split(" a ")[0] || "0";
+  const dt = dataDoDia(N, d.dia), REST = descanso(SEM.faixa), desc = grupos(d.exercicios), lo = (SEM.faixa||"").split(" a ")[0] || "0", cp = comPse();
   h += `<div class="tit-dia"><h2>${NOMES[d.dia]}${d.treino ? " · Treino " + d.treino : ""}</h2><span class="contagem" id="cont"></span></div>${dt ? `<p class="sub" style="margin-top:-8px">${ddaaaa(dt)}${d.aba !== d.treino && d.treino ? ` · anotado na aba Registro ${d.aba}` : ""}</p>` : ""}`;
+  if (!cp && d.exercicios.length) h += `<p class="sub">Para anotar a PSE (0 a 10) de cada série, cole antes o código novo do servidor (página Ligar o app do treinador).</p>`;
   d.exercicios.forEach((ex,i) => { const k = i+1, ant = anterior(ex.nome, N); let s = "";
     for (let si = 1; si <= ex.series; si++){ const a = ant && ant.series[si-1], r = reps(d,k,si), q = kg(d,k,si);
-      s += `<div class="serie"><span>S${si}</span>${campo(`e${k}s${si}r`,"reps",r,lo)}${campo(`e${k}s${si}k`,"kg",q,a ? fmt(a.kg) : "0",true)}
-        ${a ? `<div class="antes">Semana ${ant.semana}: ${a.reps} reps × ${fmt(a.kg)} kg</div>` : ""}<div class="confere" id="cf-${k}-${si}">${esc(confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa))}</div></div>`; }
+      s += `<div class="serie${cp ? " pse" : ""}"><span>S${si}</span>${campo(`e${k}s${si}r`,"reps",r,lo)}${campo(`e${k}s${si}k`,"kg",q,a ? fmt(a.kg) : "0",true)}${cp ? campo(`e${k}s${si}p`,"PSE",pse(d,k,si),"") : ""}
+        ${a ? `<div class="antes">Semana ${ant.semana}: ${a.reps} reps × ${fmt(a.kg)} kg${cp && a.pse !== "" ? ` · PSE ${fmt(a.pse)}` : ""}</div>` : ""}<div class="confere" id="cf-${k}-${si}">${esc(confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa))}</div></div>`; }
     const rec = recorde(d,k,ex), msg = recadoEx(d,k), dica = txt(celula(d.aba, N, k, COL_DICA)), dAnt = dicaAnterior(ex.nome, N);
     h += `<article class="ex${exOk(d,k,ex) ? " ok" : ""}" id="ex-${k}"><div class="ex-top"><span class="num">${k}</span><div class="ex-nome"><h3>${esc(ex.nome)}</h3><p>${plural(ex.series, "série")} · ${esc(SEM.faixa)} reps</p>${ex.tecnica ? `<span class="tec">${esc(ex.tecnica)}</span>` : ""}</div></div>
       ${ex.obs ? `<div class="obs">${esc(ex.obs)}</div>` : ""}${msg ? `<div class="recmsg">Recado do aluno: “${esc(msg)}”</div>` : ""}
       <div class="recorde" id="rec-${k}" ${rec ? "" : "hidden"}>🏆 ${rec ? esc(rec) : ""}</div><div class="series">${s}</div>
-      ${blocoEsforco(0, k, esforcoEx(d,k))}
       <div class="acoes">${ant ? `<button class="btn" type="button" data-repetir="${k}">Mesma carga da semana ${ant.semana}</button>` : ""}
         ${desc[i] ? `<button class="btn amarelo" type="button" data-desc="${esc(ex.nome)}">Descanso ${mmss(REST)}</button>` : `<span class="sub">Sem descanso: direto para o próximo.</span>`}
         ${ex.video ? `<a class="btn" href="${esc(ex.video)}" target="_blank" rel="noopener">▶ Vídeo</a>` : ""}
@@ -704,13 +706,6 @@ function ligarRegistro(){
     if ((INICIO.versao || 0) < 4){ aviso("Para mandar dicas, cole antes o código novo do servidor (página Ligar o app do treinador)."); return; }
     const box = $(`dc-${b.dataset.dica}`); box.hidden = !box.hidden; if (!box.hidden) $(`dica-${b.dataset.dica}`).focus(); });
   corpo.querySelectorAll("textarea[id^=dica-]").forEach(t => t.addEventListener("input", () => escreveuDica(t)));
-  corpo.querySelectorAll("[data-esf]").forEach(b => b.onclick = () => {
-    const k = +b.dataset.k, v = +b.dataset.v, ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
-    const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
-    const novo = esforcoEx(d,k) === v ? "" : v; row[COL_ESFORCO] = novo === "" ? "" : String(novo);
-    b.parentNode.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(+x.dataset.v === novo)));
-    enfileirar(opTreinoT(d));
-  });
 }
 function dicaAnterior(nome, N){
   for (let w = N - 1; w >= 1; w--) for (const L of Object.keys(P.reg)) for (let j = 1; j <= 9; j++){
@@ -719,7 +714,9 @@ function dicaAnterior(nome, N){
 }
 function opTreinoT(d){
   const linhas = d.exercicios.map((ex2,i) => { const r = []; for (let q = 1; q <= 5; q++){ r.push(q <= ex2.series ? reps(d,i+1,q) : ""); r.push(q <= ex2.series ? kg(d,i+1,q) : ""); } return r; });
-  return {tipo: "treino", aba: d.aba, semana: semanaN, linhas, esforco: d.exercicios.map((ex,i) => esforcoEx(d,i+1))};
+  const op = {tipo: "treino", aba: d.aba, semana: semanaN, linhas};
+  if (comPse()) op.pse = d.exercicios.map((ex,i) => { const r = []; for (let s = 1; s <= 5; s++) r.push(s <= ex.series ? pse(d,i+1,s) : ""); return r; });
+  return op;
 }
 function escreveuDica(t){
   const d = SEM.dias[atual], k = +t.id.split("-")[1], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
@@ -728,15 +725,21 @@ function escreveuDica(t){
   enfileirar({tipo: "dica", aba: d.aba, semana: semanaN, dicas: d.exercicios.map((e,i) => txt(celula(d.aba, semanaN, i+1, COL_DICA)))});
 }
 function digitou(inp){
-  const d = SEM.dias[atual], m = /^e(\d+)s(\d+)([rk])$/.exec(inp.id), c = /^c(min|bpm)$/.exec(inp.id), val = lerDigitado(inp.value);
+  const d = SEM.dias[atual], m = /^e(\d+)s(\d+)([rk])$/.exec(inp.id), c = /^c(min|bpm)$/.exec(inp.id), p = /^e(\d+)s(\d+)p$/.exec(inp.id), val = lerDigitado(inp.value);
+  if (p){   // PSE: só de 0 a 10 vai para a planilha
+    const k = +p[1], s = +p[2], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
+    const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
+    row[COL_PSE+s] = val === "" || val > 10 ? "" : String(Math.round(val));
+    $(`cf-${k}-${s}`).textContent = confereSerie(d,k,s);
+    enfileirar(opTreinoT(d));
+  }
   if (m){
     const k = +m[1], s = +m[2], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
     const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
     const v = m[3] === "r" ? (val === "" ? "" : Math.round(val)) : val;
     row[m[3] === "r" ? 2*s-1 : 2*s] = v === "" ? "" : fmt(v);
     $(`ex-${k}`).classList.toggle("ok", exOk(d,k,ex));
-    const ant = anterior(ex.nome, semanaN), a = ant && ant.series[s-1];
-    $(`cf-${k}-${s}`).textContent = confere("kg", kg(d,k,s), a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", reps(d,k,s), null, SEM.faixa);
+    $(`cf-${k}-${s}`).textContent = confereSerie(d,k,s);
     const el = $(`rec-${k}`), antes = el.hidden, rec = recorde(d,k,ex);
     el.hidden = !rec; el.textContent = rec ? "🏆 " + rec : "";
     if (rec && antes){ aviso("🏆 " + rec); try { navigator.vibrate && navigator.vibrate(60); } catch(e){} }
@@ -749,11 +752,13 @@ function digitou(inp){
   contagem();
   document.querySelectorAll("[data-dia]").forEach(b => b.classList.toggle("feito", diaFeito(+b.dataset.dia)));
 }
-function esforcoEx(d, k){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_ESFORCO)); return v === "" ? "" : Math.max(0, Math.min(4, Math.round(v))); }
-// Esforço da série (repetições na reserva): escala validada por Zourdos e cols. 2016 (doi:10.1519/JSC.0000000000001049)
-function blocoEsforco(id, k, val){
-  return `<div class="esforco" role="group" aria-label="Na última série, quantas repetições ainda sobravam?"><span>Na última série, quantas reps ainda sobravam?</span>
-    <div>${[0,1,2,3,4].map(v => `<button type="button" data-esf="${id}" data-k="${k}" data-v="${v}" aria-pressed="${val === v}">${v === 0 ? "0 · no limite" : v === 4 ? "4 ou +" : v}</button>`).join("")}</div></div>`;
+// PSE de cada série, de 0 a 10 (igual ao app do aluno). Escala de PSE por repetições na reserva, Zourdos e cols. 2016
+// (doi:10.1519/JSC.0000000000001049): PSE 10 = nenhuma repetição sobrando, 9 = 1, 8 = 2 e assim por diante.
+const comPse = () => ((INICIO && INICIO.versao) || 0) >= PSE_DESDE;
+function pse(d, k, s){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_PSE + s)); return v === "" || v < 0 || v > 10 ? "" : v; }
+function confereSerie(d, k, s){
+  const ex = d.exercicios[k-1], ant = anterior(ex.nome, semanaN), a = ant && ant.series[s-1], ep = $(`e${k}s${s}p`), vp = ep ? lerDigitado(ep.value) : "";
+  return confere("kg", kg(d,k,s), a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", reps(d,k,s), null, SEM.faixa) || (vp !== "" && vp > 10 ? "A PSE vai de 0 a 10." : "");
 }
 function contagem(){ const d = SEM.dias[atual], el = $("cont"); if (!el || !d) return; el.textContent = d.exercicios.length ? `${d.exercicios.filter((ex,i) => exOk(d,i+1,ex)).length} de ${d.exercicios.length} feitos` : ""; }
 function pararSemSalvar(){ /* a fila já guarda tudo; nada a fazer ao trocar de tela */ }

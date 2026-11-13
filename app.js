@@ -11,7 +11,8 @@ const OFFSET = {SEG:0,TER:1,QUA:2,QUI:3,SEX:4,SAB:5,DOM:6};   // a semana do cic
 const SEGUIDOS = {BISET:2, TRISET:3, "GIANT SET":99};
 const COL_RECADO = 14;   // coluna O das abas Registro (leitura A5:P157)
 const COL_DICA = 15;     // coluna P: dica do treinador (escrita pelo app do treinador)
-const COL_ESFORCO = 16;  // coluna Q: repetições que ainda sobravam na última série (0 a 4; 4 = 4 ou mais)
+const COL_PSE = 15;      // colunas Q a U: PSE (0 a 10) de cada série; série s na coluna COL_PSE + s (desde 13/11/2026)
+const PSE_DESDE = 6;     // versão do servidor (Codigo.gs) que grava a PSE; antes dela os campos não aparecem
 const FORM_FOTOS = "https://forms.gle/Jc9hwKyR9xHa6WP17";
 // Cardio da semana: qualquer texto que não seja o do modelo da planilha ("min, manter uma média de bpm")
 const cardioValido = t => !!t && (/\d/.test(t) || !/^min,?\s*manter uma m[ée]dia de\s*bpm\.?$/i.test(t.replace(/\s+/g, " ").trim()));
@@ -138,6 +139,7 @@ function montarDados(raw){
   P.videos = {}; (raw.videos||[]).forEach(r => { if (txt(r[0]) && /^https?:/.test(txt(r[1]))) P.videos[txt(r[0])] = txt(r[1]); });
   P.ini = data(P.inicio); P.fim = data(P.revisao, P.ini || undefined);
   P.fotosEm = raw.fotos_em ? new Date(raw.fotos_em + "T12:00:00") : null;
+  P.versao = Number(raw.versao) || 0;
   P.abas = abasDaSemana();
   P.reg = {}; Object.keys(raw.reg||{}).forEach(L => { P.reg[L] = (raw.reg[L]||[]).map(r => r.slice()); });
   P.cardio = {}; (raw.cardio||[]).forEach(r => { const s = Number(r[0]), d = txt(r[1]); if (s && d) P.cardio[s+"|"+d] = {minutos: lerPlanilha(r[4]), bpm: lerPlanilha(r[5]), recado: txt(r[6])}; });
@@ -150,7 +152,7 @@ function aplicarOp(op){
     op.linhas.forEach((row,i) => { const k = linhaReg(op.semana, i+1); const atual = reg[k] || (reg[k] = []);
       for (let c = 0; c < 10; c++) atual[c+1] = row[c] === "" ? "" : fmt(row[c]);
       if (op.recados) atual[COL_RECADO] = op.recados[i] || "";
-      if (op.esforco) atual[COL_ESFORCO] = op.esforco[i] === "" || op.esforco[i] == null ? "" : String(op.esforco[i]); });
+      if (op.pse) for (let s = 1; s <= 5; s++){ const v = (op.pse[i]||[])[s-1]; atual[COL_PSE+s] = v === "" || v == null ? "" : String(v); } });
   } else if (op.tipo === "cardio"){
     P.cardio[op.semana+"|"+op.dia] = {minutos: op.minutos, bpm: op.bpm, recado: op.recado};
   }
@@ -199,11 +201,19 @@ function exOk(d, k, ex){ if (!ex.series) return false; for (let s = 1; s <= ex.s
 function diaFeito(n){ const d = SEM.dias[n]; if (!d) return false;
   if (d.exercicios.length) return d.exercicios.every((ex,i) => exOk(d,i+1,ex));
   const c = P.cardio[semanaN+"|"+d.dia]; return !!(c && c.minutos !== ""); }
-function esforcoEx(d, k){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_ESFORCO)); return v === "" ? "" : Math.max(0, Math.min(4, Math.round(v))); }
-// Esforço da série (repetições na reserva): escala validada por Zourdos e cols. 2016 (doi:10.1519/JSC.0000000000001049)
-function blocoEsforco(id, k, val){
-  return `<div class="esforco" role="group" aria-label="Na última série, quantas repetições ainda sobravam?"><span>Na última série, quantas reps ainda sobravam?</span>
-    <div>${[0,1,2,3,4].map(v => `<button type="button" data-esf="${id}" data-k="${k}" data-v="${v}" aria-pressed="${val === v}">${v === 0 ? "0 · no limite" : v === 4 ? "4 ou +" : v}</button>`).join("")}</div></div>`;
+// PSE (percepção subjetiva de esforço) de cada série, de 0 a 10 (pedido de 13/11/2026, no lugar das "reps que sobravam"
+// só na última série). Âncoras da escala de PSE por repetições na reserva, Zourdos e cols. 2016
+// (doi:10.1519/JSC.0000000000001049): PSE 10 = nenhuma repetição sobrando, 9 = 1, 8 = 2 e assim por diante.
+// O recado explica a PSE como o esforço feito, sem misturar dor nem cansaço: a percepção de esforço é diferente
+// dessas sensações e misturá-las muda a nota (Pageaux 2016, doi:10.1080/17461391.2016.1188992; Halperin e Emanuel 2020,
+// doi:10.1007/s40279-019-01229-z; Bergevin e cols. 2022, doi:10.1007/s40279-022-01762-4).
+const comPse = () => (P && P.versao || 0) >= PSE_DESDE;
+function pse(d, k, s){ const v = lerPlanilha(celula(d.aba, semanaN, k, COL_PSE + s)); return v === "" || v < 0 || v > 10 ? "" : v; }
+function guiaPse(){
+  // recado pequeno e sempre à vista (pedido de 13/11/2026); a escala completa abre no "Ver a escala"
+  return `<details class="guia-pse"><summary><b>PSE</b> é o quanto você se esforçou na série, de 0 (nenhum esforço) a 10 (esforço máximo: não saía mais nenhuma repetição). Não conte dor nem cansaço, só o esforço. <span class="ver"><span class="abrir">Ver a escala</span><span class="fechar">Fechar</span></span></summary>
+    <dl><dt>10</dt><dd>esforço máximo: não saía mais nenhuma repetição</dd><dt>9</dt><dd>sobrava 1 repetição</dd><dt>8</dt><dd>sobravam 2</dd><dt>7</dt><dd>sobravam 3</dd>
+    <dt>5 a 6</dt><dd>sobravam 4 a 6</dd><dt>3 a 4</dt><dd>esforço leve</dd><dt>0 a 2</dt><dd>quase nenhum esforço</dd></dl></details>`;
 }
 function diaComAlgo(d){ return d.exercicios.some((ex,i) => { for (let s = 1; s <= ex.series; s++) if (reps(d,i+1,s) !== "") return true; return false; }); }
 
@@ -213,7 +223,8 @@ function historico(nome, N){
   for (let w = 1; w < N; w++){
     const series = [];
     Object.keys(P.reg).forEach(L => { for (let k = 1; k <= 9; k++){ const row = (P.reg[L]||[])[linhaReg(w,k)]; if (!row || nomeDaLinha(row) !== nome.trim()) continue;
-      for (let s = 0; s < 5; s++){ const r = lerPlanilha(row[1+2*s]), q = lerPlanilha(row[2+2*s]); if (r !== "" && r > 0) series.push({reps: r, kg: q === "" ? 0 : q, s}); } } });
+      for (let s = 0; s < 5; s++){ const r = lerPlanilha(row[1+2*s]), q = lerPlanilha(row[2+2*s]), p = lerPlanilha(row[COL_PSE+1+s]);
+        if (r !== "" && r > 0) series.push({reps: r, kg: q === "" ? 0 : q, s, pse: p !== "" && p >= 0 && p <= 10 ? p : ""}); } } });
     if (series.length) semanas.push({semana: w, series});
   }
   return semanas;
@@ -269,6 +280,7 @@ function dicaEx(d, k, nome){
     const row = (P.reg[L]||[])[linhaReg(w,j)]; if (row && nomeDaLinha(row) === nome.trim() && txt(row[COL_DICA])) return {texto: txt(row[COL_DICA]), semana: w}; }
   return null;
 }
+function conferePse(digitado){ return digitado !== "" && digitado > 10 ? "A PSE vai de 0 a 10." : ""; }
 function confere(tipo, valor, ref, faixa){
   if (valor === "" || valor == null) return "";
   if (tipo === "kg"){
@@ -287,8 +299,9 @@ function opTreino(d){
   const linhas = d.exercicios.map((ex,i) => { const row = []; for (let s = 1; s <= 5; s++){
     row.push(s <= ex.series ? reps(d,i+1,s) : ""); row.push(s <= ex.series ? kg(d,i+1,s) : ""); } return row; });
   const recados = d.exercicios.map((ex,i) => recadoEx(d,i+1));
-  const esforco = d.exercicios.map((ex,i) => esforcoEx(d,i+1));
-  return {tipo: "treino", aba: d.aba, semana: semanaN, linhas, recados, esforco};
+  const op = {tipo: "treino", aba: d.aba, semana: semanaN, linhas, recados};
+  if (comPse()) op.pse = d.exercicios.map((ex,i) => { const r = []; for (let s = 1; s <= 5; s++) r.push(s <= ex.series ? pse(d,i+1,s) : ""); return r; });
+  return op;
 }
 function opCardio(d){
   const c = P.cardio[semanaN+"|"+d.dia] || {}; const dt = dataDoDia(semanaN, d.dia);
@@ -423,12 +436,13 @@ function render(){
   const dt = dataDoDia(semanaN, d.dia);
   let h = `<div class="tit-dia"><h2>${NOMES[d.dia]}${d.treino ? " · Treino " + d.treino : ""}</h2><span class="contagem" id="cont"></span></div>`;
   if (dt) h += `<p class="nota" style="margin:-8px 0 0">${ddaaaa(dt)}</p>`;
-  const desc = grupos(d.exercicios), lo = (SEM.faixa||"").split(" a ")[0] || "0";
+  const desc = grupos(d.exercicios), lo = (SEM.faixa||"").split(" a ")[0] || "0", cp = comPse();
+  if (cp && d.exercicios.length) h += guiaPse();
   d.exercicios.forEach((ex,i) => { const k = i+1, ant = anterior(ex.nome, semanaN); let s = "";
     for (let si = 1; si <= ex.series; si++){
       const a = ant && ant.series[si-1], r = reps(d,k,si), q = kg(d,k,si);
-      s += `<div class="serie"><span>S${si}</span>${campo(`d${n}e${k}s${si}r`,"reps",r,lo)}${campo(`d${n}e${k}s${si}k`,"kg",q,a ? fmt(a.kg) : "0",true)}
-        ${a ? `<div class="antes">Semana ${ant.semana}: ${a.reps} reps × ${fmt(a.kg)} kg</div>` : ""}
+      s += `<div class="serie${cp ? " pse" : ""}"><span>S${si}</span>${campo(`d${n}e${k}s${si}r`,"reps",r,lo)}${campo(`d${n}e${k}s${si}k`,"kg",q,a ? fmt(a.kg) : "0",true)}${cp ? campo(`d${n}e${k}s${si}p`,"PSE",pse(d,k,si),"") : ""}
+        ${a ? `<div class="antes">Semana ${ant.semana}: ${a.reps} reps × ${fmt(a.kg)} kg${cp && a.pse !== "" ? ` · PSE ${fmt(a.pse)}` : ""}</div>` : ""}
         <div class="confere" id="cf-${n}-${k}-${si}">${esc(confere("kg", q, a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", r, null, SEM.faixa))}</div></div>`;
     }
     const rec = recorde(d,k,ex), msg = recadoEx(d,k), dica = dicaEx(d,k,ex.nome);
@@ -438,7 +452,6 @@ function render(){
       ${dica ? `<div class="dica"><b>Dica do treinador${dica.semana !== semanaN ? ` (semana ${dica.semana})` : ""}:</b> ${esc(dica.texto)}</div>` : ""}
       <div class="recorde" id="rec-${n}-${k}" ${rec ? "" : "hidden"}>🏆 ${rec ? esc(rec.texto) : ""}</div>
       <div class="series">${s}</div>
-      ${blocoEsforco(n, k, esforcoEx(d,k))}
       <div class="recado" id="rc-${n}-${k}" ${msg ? "" : "hidden"}><textarea id="m-${n}-${k}" maxlength="300" placeholder="Ex.: máquina ocupada, troquei pelo halter; senti o ombro na 3ª série">${esc(msg)}</textarea><small>O seu treinador vê este recado na sua planilha.</small></div>
       <div class="acoes">
         ${ant ? `<button class="btn" type="button" data-repetir="${k}">Mesma carga da semana ${ant.semana}</button>` : ""}
@@ -458,13 +471,6 @@ function render(){
   tela.innerHTML = h; contagem();
   ligarAgenda();
   if ($("story")) $("story").onclick = () => compartilharStory(d);
-  tela.querySelectorAll("[data-esf]").forEach(b => b.onclick = () => {
-    const k = +b.dataset.k, v = +b.dataset.v, ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
-    const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
-    const novo = esforcoEx(d,k) === v ? "" : v; row[COL_ESFORCO] = novo === "" ? "" : String(novo);
-    b.parentNode.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(+x.dataset.v === novo)));
-    enfileirar(opTreino(d));
-  });
 
   tela.querySelectorAll("input").forEach(inp => {
     inp.addEventListener("input", () => digitou(inp));
@@ -482,16 +488,22 @@ function render(){
 
 function digitou(inp){
   const n = atual, d = SEM.dias[n];
-  const m = /^d(\d+)e(\d+)s(\d+)([rk])$/.exec(inp.id), c = /^c(\d+)(min|bpm)$/.exec(inp.id);
+  const m = /^d(\d+)e(\d+)s(\d+)([rk])$/.exec(inp.id), c = /^c(\d+)(min|bpm)$/.exec(inp.id), p = /^d(\d+)e(\d+)s(\d+)p$/.exec(inp.id);
   const val = lerDigitado(inp.value);
+  if (p){   // PSE: só de 0 a 10 vai para a planilha; acima disso pede para conferir
+    const k = +p[2], s = +p[3], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
+    const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
+    row[COL_PSE+s] = val === "" || val > 10 ? "" : String(Math.round(val));
+    $(`cf-${n}-${k}-${s}`).textContent = confereSerie(d,n,k,s);
+    enfileirar(opTreino(d));
+  }
   if (m){
     const k = +m[2], s = +m[3], ex = d.exercicios[k-1], reg = P.reg[d.aba] || (P.reg[d.aba] = []);
     const row = reg[linhaReg(semanaN,k)] || (reg[linhaReg(semanaN,k)] = [ex.nome]);
     const v = m[4] === "r" ? (val === "" ? "" : Math.round(val)) : val;
     row[m[4] === "r" ? 2*s-1 : 2*s] = v === "" ? "" : fmt(v);
     $(`ex-${n}-${k}`).classList.toggle("ok", exOk(d,k,ex));
-    const ant = anterior(ex.nome, semanaN), a = ant && ant.series[s-1];
-    $(`cf-${n}-${k}-${s}`).textContent = confere("kg", kg(d,k,s), a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", reps(d,k,s), null, SEM.faixa);
+    $(`cf-${n}-${k}-${s}`).textContent = confereSerie(d,n,k,s);
     const antes = $(`rec-${n}-${k}`).hidden, rec = recorde(d,k,ex);
     $(`rec-${n}-${k}`).hidden = !rec; $(`rec-${n}-${k}`).textContent = rec ? "🏆 " + rec.texto : "";
     if (rec && antes){ aviso("🏆 " + rec.texto); try { navigator.vibrate && navigator.vibrate(60); } catch(e){} }
@@ -500,6 +512,10 @@ function digitou(inp){
   if (c){ const ch = semanaN+"|"+d.dia; const o = P.cardio[ch] || (P.cardio[ch] = {minutos:"", bpm:"", recado:""});
     o[c[2] === "min" ? "minutos" : "bpm"] = val === "" ? "" : Math.round(val); enfileirar(opCardio(d)); }
   contagem(); abasDias();
+}
+function confereSerie(d, n, k, s){
+  const ex = d.exercicios[k-1], ant = anterior(ex.nome, semanaN), a = ant && ant.series[s-1], ep = $(`d${n}e${k}s${s}p`);
+  return confere("kg", kg(d,k,s), a ? {kg: a.kg, semana: ant.semana} : null) || confere("reps", reps(d,k,s), null, SEM.faixa) || conferePse(ep ? lerDigitado(ep.value) : "");
 }
 function escreveuRecado(t){
   const n = atual, d = SEM.dias[n], m = /^m-(\d+)-(\w+)$/.exec(t.id); if (!m) return;
@@ -707,7 +723,7 @@ function ligarAgenda(){
 function mostrarRegistro(){
   let t = `${P.nome} · Semana ${SEM.semana} (${SEM.faixa} reps)\n`;
   SEM.dias.forEach(d => { t += `\n${NOMES[d.dia]}${d.treino ? " · Treino " + d.treino : ""}\n`;
-    d.exercicios.forEach((ex,i) => { const k = i+1, ss = []; for (let s = 1; s <= ex.series; s++){ const r = reps(d,k,s), q = kg(d,k,s); ss.push(r !== "" ? `${r}×${fmt(q || 0)}kg` : "-"); }
+    d.exercicios.forEach((ex,i) => { const k = i+1, ss = []; for (let s = 1; s <= ex.series; s++){ const r = reps(d,k,s), q = kg(d,k,s), e = comPse() ? pse(d,k,s) : ""; ss.push(r !== "" ? `${r}×${fmt(q || 0)}kg${e !== "" ? ` PSE ${fmt(e)}` : ""}` : "-"); }
       t += `  ${ex.nome.trim()}: ${ss.join("  ")}\n`; const m = recadoEx(d,k); if (m) t += `    Recado: ${m}\n`; });
     if (d.cardio){ const c = P.cardio[SEM.semana+"|"+d.dia] || {}; t += `  Aeróbico: ${c.minutos !== "" && c.minutos != null ? c.minutos : "-"} min, ${c.bpm !== "" && c.bpm != null ? c.bpm : "-"} bpm (pedido: ${d.cardio})\n`; if (c.recado) t += `    Recado: ${c.recado}\n`; } });
   $("envio").hidden = false; $("texto").textContent = t; $("envio").scrollIntoView({behavior: "smooth"});
@@ -751,7 +767,7 @@ async function atualizar(){
     const raw = await chamar({acao: "dados", codigo: CODIGO});
     // gravou algo enquanto lia? a leitura pode estar sem a última gravação: lê de novo
     if (gravacoes !== g0 && P){ setTimeout(atualizar, 500); return; }
-    const nova = JSON.stringify([raw.treino, raw.videos, raw.reg, raw.cardio]);
+    const nova = JSON.stringify([raw.versao, raw.treino, raw.videos, raw.reg, raw.cardio]);
     guardar(K_DADOS, {raw, em: Date.now()});
     if (!P) mostrar(raw, true);
     else if (nova !== assinatura){ const foco = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
