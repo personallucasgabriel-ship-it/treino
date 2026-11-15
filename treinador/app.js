@@ -1904,8 +1904,6 @@ window.addEventListener("pagehide", enviarAoSair);
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost") && !window.__API_MOCK)
   navigator.serviceWorker.register("sw.js").catch(() => {});
 
-render(false);
-if (CHAVE){ if (INICIO) mostrarStatus(Object.keys(FILA).length ? "local" : "ok"); atualizar(); }
 
 // ---------- AVISOS no celular dos alunos (servidor versão 17; pedido do criador, 15/11/2026) ----------
 // Os automáticos começam desligados: o criador lê cada texto e liga (é o ok dele). Regras no servidor (Avisos.gs).
@@ -1986,3 +1984,8 @@ function telaAvisos(){
   });
   ligarFormAviso("avT", t => ({acao: "t_aviso_todos", ...t}), j => `${j.depois ? "Guardado ✓ Sai às 7h." : "Mandado ✓"} ${plural(j.alunos, "aluno")}, ${plural(j.aparelhos, "celular")} com os avisos ligados.`, "Mandar este aviso para TODOS os alunos com o app?");
 }
+
+// Abrir o app: no fim do arquivo, depois de todas as listas (AV_INFO e outras) existirem.
+// Antes ficava no meio e quebrava a aba Hoje quando o celular já tinha dados guardados (15/11/2026).
+render(false);
+if (CHAVE){ if (INICIO) mostrarStatus(Object.keys(FILA).length ? "local" : "ok"); atualizar(); }
