@@ -146,6 +146,10 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
 .grande{width:100%;border:0;border-radius:14px;padding:16px;font-family:var(--f-titulo);font-weight:800;font-size:17px;text-transform:uppercase;letter-spacing:.04em;background:var(--amarelo);color:var(--preto)}
 .grande.sec{background:none;border:1px solid var(--linha);color:var(--branco)}
 
+.baixo{position:fixed;left:0;right:0;bottom:0;z-index:15;background:rgba(11,11,11,.96);border-top:1px solid var(--linha);display:flex;justify-content:center;gap:6px;padding:8px max(12px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px))}
+.baixo a{flex:1;max-width:200px;display:flex;flex-direction:column;align-items:center;gap:1px;text-decoration:none;padding:7px 4px;border-radius:12px;font-weight:700;font-size:13px;color:var(--cinza)}
+.baixo a span{font-size:18px;line-height:1.1}
+.baixo a[aria-current="page"]{color:var(--preto);background:var(--amarelo)}
 .timer{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--amarelo);color:var(--preto);padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:12px;box-shadow:0 -8px 30px rgba(0,0,0,.5)}
 .timer .t{font-family:var(--f-num);font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
 .timer .r{flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -248,12 +252,10 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
   <section class="resumo plano" id="evolucao" hidden>
     <h2>Minha evolução</h2>
     <div id="evoCorpo"></div>
-    <button class="btn" id="fecharEvo" type="button">Fechar</button>
   </section>
   <section class="resumo plano" id="dieta" hidden>
     <h2>Sugestão alimentar</h2>
     <div id="dietaCorpo"></div>
-    <button class="btn" id="fecharDieta" type="button">Fechar</button>
   </section>
   <section class="resumo" id="envio" hidden>
     <h2>Registro da semana</h2>
@@ -269,6 +271,7 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
   <button type="button" id="mais">+15s</button>
   <button type="button" id="parar">Fechar</button>
 </div>
+<nav class="baixo" id="abas" aria-label="Partes do app" hidden></nav>
 <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
 
 <script src="app.js"></script>

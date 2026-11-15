@@ -491,8 +491,6 @@ function render(){
       <div class="acoes"><button class="btn${c.recado ? " tem" : ""}" type="button" data-recado="c">${c.recado ? "✎ Recado" : "✎ Recado para o treinador"}</button></div></div>`; }
   if (d.exercicios.length) h += `<button class="grande" type="button" id="story"><svg class="ig" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.2" fill="currentColor"/></svg> Compartilhar no story</button>`;
   h += `<button class="grande sec" type="button" id="enviar">Ver registro da semana</button>`;
-  h += `<button class="grande sec" type="button" id="verEvo">📈 Minha evolução</button>`;
-  if (P.dieta) h += `<button class="grande sec" type="button" id="verDieta">🍽️ Sugestão alimentar</button>`;
   h += blocoAgenda();
   tela.innerHTML = h; contagem();
   ligarAgenda();
@@ -516,8 +514,6 @@ function render(){
   tela.querySelectorAll("[data-desc]").forEach(b => b.onclick = () => iniciar(b.dataset.desc));
   tela.querySelectorAll("[data-recado]").forEach(b => b.onclick = () => { const k = b.dataset.recado, box = $(`rc-${n}-${k}`); box.hidden = !box.hidden; if (!box.hidden) $(`m-${n}-${k}`).focus(); });
   $("enviar").onclick = mostrarRegistro;
-  $("verEvo").onclick = mostrarEvolucao;
-  if ($("verDieta")) $("verDieta").onclick = mostrarDieta;
 }
 
 function digitou(inp){
@@ -832,7 +828,7 @@ function pintarEvo(erro){
       .catch(e => { sp.textContent = e.servidor ? "Não abriu" : "Sem internet"; }); });
 }
 async function mostrarEvolucao(){
-  $("evolucao").hidden = false; pintarEvo(); $("evolucao").scrollIntoView({behavior: "smooth"});
+  pintarEvo();
   if (evoLendo) return; evoLendo = true;
   try { const e = await chamar({acao: "evolucao", codigo: CODIGO}, 60000); EVO = e; guardar(K_EVO, e); pintarEvo(); }
   catch(e){ pintarEvo(e.servidor ? (/desconhecida/i.test(e.message) ? "Esta parte do app chega em breve." : e.message) : "Sem internet: mostrando o que já estava guardado no celular."); }
@@ -863,7 +859,7 @@ function abrirFoto(url, leg){
   const fechar = () => { f.remove(); document.removeEventListener("keydown", tecla); }, tecla = e => { if (e.key === "Escape") fechar(); };
   f.onclick = fechar; document.addEventListener("keydown", tecla); document.body.appendChild(f); f.querySelector("button").focus();
 }
-$("fecharEvo").onclick = () => { $("evolucao").hidden = true; };
+
 
 // ---------- versão 15 (15/11/2026; pedido do criador): suas cargas, conquistas, sugestão alimentar e renovação ----------
 let EVO_EX = ler("evo-ex:" + CODIGO);
@@ -972,13 +968,34 @@ function pintarDieta(erro){
   c.innerHTML = h;
 }
 async function mostrarDieta(){
-  $("dieta").hidden = false; pintarDieta(); $("dieta").scrollIntoView({behavior: "smooth"});
+  pintarDieta();
   if (dietaLendo) return; dietaLendo = true;
   try { const j = await chamar({acao: "dieta", codigo: CODIGO}, 60000); DIETA = j; guardar(K_DIETA, j); pintarDieta(); }
   catch(e){ pintarDieta(e.servidor ? e.message : "Sem internet: mostrando o que já estava guardado no celular."); }
   finally { dietaLendo = false; }
 }
-$("fecharDieta").onclick = () => { $("dieta").hidden = true; };
+
+// ---------- abas embaixo (pedido do criador, 15/11/2026): Treino, Evolução e Alimentação (só com a sugestão alimentar liberada) ----------
+const ABAS = [["treino", "🏋️", "Treino"], ["evolucao", "📈", "Evolução"], ["alimentacao", "🍽️", "Alimentação"]];
+const abaAtual = () => { const h = location.hash.replace("#", ""); return h === "evolucao" || (h === "alimentacao" && P && P.dieta) ? h : "treino"; };
+function pintarNav(){
+  const nav = $("abas"); if (!P){ nav.hidden = true; return; }
+  const a = abaAtual(), lista = ABAS.filter(([k]) => k !== "alimentacao" || P.dieta);
+  nav.innerHTML = lista.map(([k, ic, t]) => `<a href="#${k}" aria-current="${k === a ? "page" : "false"}"><span aria-hidden="true">${ic}</span>${t}</a>`).join("");
+  nav.hidden = false;
+}
+let abaMostrada = null;
+function aplicarAba(){
+  if (!P) return;
+  const a = abaAtual(), tr = a === "treino";
+  ["meta", "avisos", "dias", "tela"].forEach(id => $(id).hidden = !tr);
+  if (!tr) $("envio").hidden = true;
+  $("evolucao").hidden = a !== "evolucao"; $("dieta").hidden = a !== "alimentacao";
+  pintarNav();
+  if (a !== abaMostrada){ abaMostrada = a; scrollTo(0, 0);
+    if (a === "evolucao") mostrarEvolucao(); else if (a === "alimentacao") mostrarDieta(); }
+}
+window.addEventListener("hashchange", aplicarAba);
 
 // ----- renovação: perto do fim do plano (aba Alunos do Financeiro; só consultoria online) -----
 // Preços e links: ferramentas/vendas/precos-e-oferta.md. Mudou lá, mude aqui.
@@ -1013,6 +1030,7 @@ function mostrar(raw, primeira){
   $("meta").hidden = false; $("dias").hidden = false;
   const w = Math.min(12, Math.max(1, semanaDe(hojeZero())));
   montarSemana(primeira ? w : semanaN, !primeira);
+  aplicarAba();
 }
 async function atualizar(){
   const guardado = ler(K_DADOS);
@@ -1027,6 +1045,7 @@ async function atualizar(){
     if (!P) mostrar(raw, true);
     else if (nova !== assinatura){ const foco = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
       if (foco){ montarDados(raw); precisaRender = true; } else mostrar(raw, false); }
+    if (P && (!!raw.dieta !== P.dieta || JSON.stringify(raw.plano || null) !== JSON.stringify(P.plano))){ P.dieta = !!raw.dieta; P.plano = raw.plano || null; avisos(); aplicarAba(); }
     assinatura = nova; mostrarStatus(Object.keys(FILA).length ? "local" : "ok");
     enviar();
   } catch(e){
