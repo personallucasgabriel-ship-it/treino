@@ -1197,6 +1197,11 @@ function formGasto(){
 // Os números do mês seguem o painel da consultoria: contam pelo mês do 1º contato; proposta = Plano / valor preenchido; venda = Fechou.
 // Anotar precisa de internet. "Fechou" não cria nada aqui: a rotina da manhã (Comercial) cria a pasta do aluno.
 let LEADS = ler("t_leads"), leadsLendo = false, leadForm = false, leadAberto = 0, leadFeito = null, leadEnviando = false;
+// versão 18 (15/11/2026): quadro por etapa, termômetro (colunas K a M), histórico (aba Interações) e Instagram automático
+let leadsVista = ler("t_leads_vista") === "quadro" ? "quadro" : "lista", leadEtapaNova = "", igAberto = false, igEnviando = false;
+const ETAPAS_QUADRO = ["Novo", "Conversando", "Proposta enviada", "Mês que vem", "Fechou", "Não fechou"];
+const TERMO = {"Frio": "t-frio", "Morno": "t-morno", "Quente": "t-quente", "Pronto": "t-pronto"};
+const termoTag = l => l.cor && TERMO[l.cor] ? `<span class="termo ${TERMO[l.cor]}">${esc(l.cor)}${l.nota != null ? " · " + l.nota : ""}</span>` : "";
 const ABERTAS = ["Novo", "Conversando", "Proposta enviada", "Mês que vem"];
 const MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
 function contatoLink(c){
@@ -1206,7 +1211,7 @@ function contatoLink(c){
   return null;
 }
 function lerLeadsDe(j){
-  LEADS = {leads: j.leads, origens: j.origens, interesses: j.interesses, etapas: j.etapas, motivos: j.motivos, planilha: j.planilha, lido_em: j.lido_em};
+  LEADS = {leads: j.leads, origens: j.origens, interesses: j.interesses, etapas: j.etapas, motivos: j.motivos, planilha: j.planilha, lido_em: j.lido_em, ig: j.ig || null};
   guardar("t_leads", LEADS);
 }
 async function lerLeads(silencioso){
@@ -1246,21 +1251,43 @@ function telaLeads(erro){
     ${fatoFin("Vendas", at.vendas, `${difTxt(at.vendas - ant.vendas)} sobre ${nomeAnt}`, true)}
     ${fatoFin("Conversão (lead → venda)", at.conv + "%", `${difTxt(at.conv - ant.conv, " pontos")} sobre ${nomeAnt}`)}
   </div>`;
-  h += `<div class="acoes"><button class="btn amarelo" type="button" id="ldNovo" aria-pressed="${leadForm}">+ Lead</button></div><div id="ldForm"></div>`;
+  h += `<div class="acoes"><button class="btn amarelo" type="button" id="ldNovo" aria-pressed="${leadForm}">+ Lead</button>${escolha("ldVista", [["lista", "Lista"], ["quadro", "Quadro"]], leadsVista)}</div><div id="ldForm"></div>`;
+  h += cartaoInstagram();
+  if (leadsVista === "quadro"){
+    const limite = isoDe(new Date(hoje.getFullYear(), hoje.getMonth() - 3, hoje.getDate()));
+    const aberto = (LEADS.leads || []).find(l => l.linha === leadAberto);
+    h += `<div class="quadro" id="ldQuadro">${ETAPAS_QUADRO.map(e => {
+      let ls = leads.filter(l => (l.etapa || "Novo") === e);
+      if (e === "Fechou" || e === "Não fechou") ls = ls.filter(l => (l.data || "") >= limite);
+      ls.sort((a, b) => (b.nota ?? -1) - (a.nota ?? -1) || (b.ultima || b.data || "").localeCompare(a.ultima || a.data || ""));
+      return `<section class="coluna" data-etapa="${esc(e)}"><header><h3>${esc(e)}</h3><span class="cont">${ls.length}</span></header>
+        ${ls.map(l => `<button type="button" class="cartao${leadAberto === l.linha ? " aberto" : ""}" draggable="true" data-lead="${l.linha}">
+          <span class="topo"><span class="bola ${TERMO[l.cor] || "info"}"></span><b>${esc(l.nome)}</b></span>
+          ${termoTag(l)}
+          <small>${esc([l.ultima ? `última ação ${ddIso(l.ultima)}` : "", l.proximo && ABERTAS.includes(l.etapa) ? `chamar ${ddIso(l.proximo)}` : ""].filter(Boolean).join(" · ") || `desde ${ddIso(l.data)}`)}</small></button>`).join("") || `<p class="vazio">—</p>`}
+        ${e === "Fechou" || e === "Não fechou" ? `<p class="sub">últimos 3 meses</p>` : ""}</section>`; }).join("")}</div>
+      <p class="sub">Toque num cartão para ver a história e mudar a etapa. No computador, dá para arrastar o cartão para outra coluna.</p>`;
+    if (aberto) h += `<div class="lead aberto"><div class="aluno"><span class="bola ${TERMO[aberto.cor] || "info"}"></span><span class="meio"><h3>${esc(aberto.nome)}</h3><p>${esc([aberto.etapa, aberto.interesse === "Personal presencial" ? "Presencial" : aberto.interesse === "Consultoria online" ? "Online" : ""].filter(Boolean).join(" · "))}</p></span>
+      <span class="acoes">${contatoLink(aberto.contato) ? `<a class="btn" href="${esc(contatoLink(aberto.contato).url)}" target="_blank" rel="noopener">${contatoLink(aberto.contato).rot}</a>` : ""}<button class="btn amarelo" type="button" data-fechar="1">Fechar</button></span></div><div id="ldEd"></div></div>`;
+  }
 
   const abertos = leads.filter(l => ABERTAS.includes(l.etapa));
   const chamar = abertos.filter(l => l.proximo && isoData(l.proximo) <= hoje).sort((a, b) => a.proximo.localeCompare(b.proximo));
   const semData = abertos.filter(l => !l.proximo);
   const depois = abertos.filter(l => l.proximo && isoData(l.proximo) > hoje).sort((a, b) => a.proximo.localeCompare(b.proximo));
   const linha = (l, frase, nivel) => { const c = contatoLink(l.contato), aberto = leadAberto === l.linha;
-    return `<div class="lead${aberto ? " aberto" : ""}"><div class="aluno"><span class="bola ${nivel}"></span><span class="meio"><h3>${esc(l.nome)}</h3><p>${esc([l.etapa || "Sem etapa", l.interesse === "Personal presencial" ? "Presencial" : l.interesse === "Consultoria online" ? "Online" : "", frase].filter(Boolean).join(" · "))}</p></span>
+    return `<div class="lead${aberto ? " aberto" : ""}"><div class="aluno"><span class="bola ${nivel}"></span><span class="meio"><h3>${esc(l.nome)}</h3><p>${termoTag(l)}${termoTag(l) ? " " : ""}${esc([l.etapa || "Sem etapa", l.interesse === "Personal presencial" ? "Presencial" : l.interesse === "Consultoria online" ? "Online" : "", frase].filter(Boolean).join(" · "))}</p></span>
       <span class="acoes">${c ? `<a class="btn" href="${esc(c.url)}" target="_blank" rel="noopener">${c.rot}</a>` : ""}<button class="btn${aberto ? " amarelo" : ""}" type="button" data-lead="${l.linha}">${aberto ? "Cancelar" : "Atualizar"}</button></span></div>
       ${aberto ? `<div id="ldEd"></div>` : ""}</div>`; };
+  if (leadsVista === "lista"){
   h += `<section class="secao"><header><h2>Chamar hoje</h2><span class="cont">${plural(chamar.length, "lead")}</span></header>`;
   h += chamar.length ? `<div class="lista">${chamar.map(l => { const n = dias(isoData(l.proximo), hoje); return linha(l, n ? `atrasado ${plural(n, "dia")} (era ${ddIso(l.proximo)})` : "hoje", n ? "atencao" : "aviso"); }).join("")}</div>` : `<p class="vazio">Ninguém para chamar hoje.</p>`;
   h += `</section>`;
   if (semData.length) h += `<section class="secao"><header><h2>Sem data de contato</h2><span class="cont">ponha uma data</span></header><div class="lista">${semData.map(l => linha(l, `desde ${ddIso(l.data)}`, "aviso")).join("")}</div></section>`;
   if (depois.length) h += `<section class="secao"><header><h2>Próximos contatos</h2><span class="cont">${plural(depois.length, "lead")}</span></header><div class="lista">${depois.map(l => linha(l, `chamar em ${ddIso(l.proximo)}`, "ok")).join("")}</div></section>`;
+  const quentes = abertos.filter(l => l.cor === "Quente" || l.cor === "Pronto").sort((a, b) => (b.nota || 0) - (a.nota || 0));
+  if (quentes.length) h += `<section class="secao"><header><h2>Esquentando</h2><span class="cont">pelo termômetro</span></header><div class="lista">${quentes.map(l => linha(l, `${l.cor} (${l.nota})${l.ultima ? `, última ação ${ddIso(l.ultima)}` : ""}`, l.cor === "Pronto" ? "atencao" : "aviso")).join("")}</div></section>`;
+  }
 
   // de onde vêm (este ano), como no painel
   const anoTxt = String(ano), porOrigem = {};
@@ -1273,10 +1300,61 @@ function telaLeads(erro){
 
   $("ldNovo").onclick = () => { leadForm = !leadForm; leadAberto = 0; leadFeito = null; telaLeads(); };
   if ($("ldPagar")) $("ldPagar").onclick = () => { finForm = "pag"; finPrefill = leadFeito.nome; leadFeito = null; };
-  document.querySelectorAll("[data-lead]").forEach(b => b.onclick = () => { const n = Number(b.dataset.lead); leadAberto = leadAberto === n ? 0 : n; leadForm = false; leadFeito = null; telaLeads(); });
+  document.querySelectorAll("[data-lead]").forEach(b => b.onclick = () => { const n = Number(b.dataset.lead); leadAberto = leadAberto === n ? 0 : n; leadEtapaNova = ""; leadForm = false; leadFeito = null; telaLeads();
+    if (leadAberto && leadsVista === "quadro" && $("ldEd")) $("ldEd").scrollIntoView({behavior: "smooth", block: "start"}); });
+  document.querySelectorAll("[data-fechar]").forEach(b => b.onclick = () => { leadAberto = 0; telaLeads(); });
+  ligarEscolha("ldVista", v => { leadsVista = v; guardar("t_leads_vista", v); leadAberto = 0; telaLeads(); });
+  ligarQuadro(); ligarInstagram();
   if (leadForm) formLead();
-  if (leadAberto) editarLead((LEADS.leads || []).find(l => l.linha === leadAberto));
+  if (leadAberto) editarLead((LEADS.leads || []).find(l => l.linha === leadAberto), leadEtapaNova);
   if (!quando || Date.now() - quando > 5 * 60e3) lerLeads(true);
+}
+
+// Arrastar no computador (no celular é tocar e escolher a etapa): soltar numa coluna abre o cartão já com a etapa nova.
+function ligarQuadro(){
+  if (!$("ldQuadro")) return;
+  document.querySelectorAll(".cartao[draggable]").forEach(c => c.ondragstart = ev => { ev.dataTransfer.setData("text/plain", c.dataset.lead); ev.dataTransfer.effectAllowed = "move"; });
+  document.querySelectorAll(".coluna").forEach(col => {
+    col.ondragover = ev => { ev.preventDefault(); col.classList.add("alvo"); };
+    col.ondragleave = () => col.classList.remove("alvo");
+    col.ondrop = ev => { ev.preventDefault(); col.classList.remove("alvo"); const n = Number(ev.dataTransfer.getData("text/plain")); const l = (LEADS.leads || []).find(x => x.linha === n);
+      if (!l || l.etapa === col.dataset.etapa) return; leadAberto = n; leadEtapaNova = col.dataset.etapa; leadFeito = null; telaLeads(); };
+  });
+}
+
+// Instagram automático (servidor versão 18): a chave fica só no servidor; daqui ela só passa uma vez, quando o criador cola.
+function cartaoInstagram(){
+  const ig = LEADS && LEADS.ig;
+  if (!ig) return `<div class="card"><h3>📷 Instagram automático</h3><p class="sub">Para ler comentários e DMs sozinho, o servidor do app precisa da versão 18. Cole o código novo pela página Ligar o app do treinador e toque em ↻.</p></div>`;
+  const quando = ig.lido_em ? new Date(ig.lido_em) : null, u = ig.ultimo;
+  let h = `<div class="card ig"><div class="ig-topo"><h3>📷 Instagram automático</h3><span class="termo ${ig.ligado ? "t-ok" : "t-frio"}">${ig.ligado ? "ligado" : "desligado"}</span></div>`;
+  if (ig.ligado){
+    h += `<p class="sub">${ig.usuario ? `Conta @${esc(ig.usuario)}. ` : ""}Todo dia às 7h eu leio os comentários, as DMs e as respostas de story e anoto no termômetro.${quando ? ` Última leitura: ${dd(quando)} às ${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}${u ? ` (${plural(u.interacoes || 0, "ação", "ações")}, ${plural(u.leads_novos || 0, "lead novo", "leads novos")})` : ""}.` : ""}</p>`;
+    if (ig.erro) h += `<p class="sub erro">O Instagram respondeu: ${esc(ig.erro)}. Se falar de chave ou "token", gere uma chave nova e troque aqui.</p>`;
+    if (!ig.despertador) h += `<p class="sub erro">O despertador das 7h não está ligado: troque a chave (cole a mesma) para ligar de novo.</p>`;
+    h += `<div class="acoes"><button class="btn amarelo" type="button" id="igAgora">Ler agora</button><button class="btn" type="button" id="igTrocar">${igAberto ? "Cancelar" : "Trocar a chave"}</button><button class="btn" type="button" id="igDesl">Desligar</button></div>`;
+  } else {
+    h += `<p class="sub">Lê sozinho os comentários, as DMs e as respostas de story e põe no termômetro. Curtidas e quem começou a seguir continuam pelo print. Para ligar, crie a chave no aplicativo da Meta (o passo a passo está no chat) e cole aqui.</p>`;
+    if (!igAberto) h += `<div class="acoes"><button class="btn amarelo" type="button" id="igTrocar">Colar a chave</button></div>`;
+  }
+  if (igAberto) h += `<div class="form"><label>Chave do Instagram (o código comprido que a Meta mostrou)<textarea class="busca" id="igChave" rows="3" autocomplete="off" spellcheck="false"></textarea></label>
+    <p class="sub">A chave vai direto para o servidor do seu app e fica guardada só lá. Não mande essa chave no chat.</p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="igOk">Ligar</button></div></div>`;
+  h += `<p class="sub" id="igMsg"></p></div>`;
+  return h;
+}
+function ligarInstagram(){
+  if ($("igTrocar")) $("igTrocar").onclick = () => { igAberto = !igAberto; telaLeads(); if (igAberto && $("igChave")) $("igChave").focus(); };
+  const enviar = async (corpo, msg, depois) => {
+    if (igEnviando) return; igEnviando = true; $("igMsg").textContent = msg;
+    try { const j = await chamar(corpo, 120000); lerLeadsDe(j); igAberto = false; leadFeito = depois(j.feito || {}); telaLeads(); window.scrollTo({top: 0}); }
+    catch(e){ $("igMsg").textContent = e.servidor ? (/desconhecida/i.test(e.message) ? "O servidor ainda é a versão antiga: cole o código novo (versão 18)." : e.message) : "Sem internet: tente de novo quando a internet voltar."; }
+    finally { igEnviando = false; }
+  };
+  if ($("igOk")) $("igOk").onclick = () => { const t = ($("igChave").value || "").replace(/\s+/g, ""); if (t.length < 50){ $("igMsg").textContent = "Cole o código inteiro (ele é bem comprido)."; return; }
+    enviar({acao: "t_ig_chave", token: t}, "Conferindo com o Instagram…", f => ({texto: `Instagram ligado${f.usuario ? ` (@${f.usuario})` : ""}. Amanhã às 7h sai a primeira leitura; para ver já, toque em Ler agora.`})); };
+  if ($("igAgora")) $("igAgora").onclick = () => enviar({acao: "t_ig_agora"}, "Lendo o Instagram… (pode levar 1 minuto)", f => ({texto: f.ig === "lido" ? `Li o Instagram: ${plural(f.interacoes || 0, "ação nova", "ações novas")}, ${plural(f.leads_novos || 0, "lead novo", "leads novos")}.${f.erro ? ` Aviso: ${f.erro}` : ""}` : "O Instagram não está ligado."}));
+  if ($("igDesl")) $("igDesl").onclick = () => { if (confirm("Desligar o Instagram automático? A chave sai do servidor e a leitura das 7h para. O que já foi anotado continua.")) enviar({acao: "t_ig_desligar"}, "Desligando…", () => ({texto: "Instagram automático desligado."})); };
 }
 
 function datasRapidas(id){ return `<div class="filtros" role="group" id="${id}R">${[["1", "Amanhã"], ["3", "Em 3 dias"], ["7", "Em 1 semana"], ["0", "Sem data"]].map(([v, t]) => `<button type="button" data-d="${v}">${t}</button>`).join("")}</div>`; }
@@ -1310,17 +1388,32 @@ function formLead(){
   };
 }
 
-function editarLead(l){
+function historicoLead(l){
+  const itens = (l.hist || []).map(x => ({data: x.data, t: `${x.acao}${x.pontos ? ` (+${x.pontos})` : ""}`, s: [x.obs, x.de].filter(Boolean).join(" · ")}));
+  const ano = (l.data || "").slice(0, 4) || String(hojeZero().getFullYear());
+  String(l.obs || "").split("|").map(t => t.trim()).filter(Boolean).forEach(t => {
+    const m = /^(\d{1,2})\/(\d{1,2}):\s*(.*)$/.exec(t);
+    if (m) itens.push({data: `${ano}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`, t: "Observação", s: m[3]});
+    else itens.push({data: l.data || "", t: "Observação", s: t});
+  });
+  if (l.data) itens.push({data: l.data, t: "Entrou nos leads", s: l.origem ? `origem: ${l.origem}` : ""});
+  itens.sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  if (!itens.length) return "";
+  return `<div class="hist"><span class="rot">História${l.cor ? ` · termômetro: ${esc(l.cor)} (${l.nota})` : ""}</span><ol>${itens.slice(0, 30).map(x => `<li><time>${x.data ? ddIso(x.data) : ""}</time><b>${esc(x.t)}</b>${x.s ? `<span>${esc(x.s)}</span>` : ""}</li>`).join("")}</ol></div>`;
+}
+
+function editarLead(l, etapaNova){
   if (!l || !$("ldEd")) return;
   $("ldEd").innerHTML = `<div class="card form">
-    <div><span class="rot">Etapa</span>${escolha("leEtapa", (LEADS.etapas || []).map(e => [e, e]), l.etapa)}</div>
+    ${historicoLead(l)}
+    <div><span class="rot">Etapa</span>${escolha("leEtapa", (LEADS.etapas || []).map(e => [e, e]), etapaNova || l.etapa)}</div>
     ${l.interesse ? "" : `<div><span class="rot">Interesse</span>${escolha("leInt", [["Consultoria online", "Consultoria online"], ["Personal presencial", "Presencial"]], "")}</div>`}
     <label>Plano / valor (quando mandar a proposta)<input class="busca" id="lePlano" maxlength="80" value="${esc(l.plano)}" placeholder="Ex.: Trimestral R$ 497"></label>
-    <label id="leMotRot"${l.etapa === "Não fechou" ? "" : " hidden"}>Motivo<select id="leMot"><option value="">Escolha</option>${opcoes((LEADS.motivos || []).map(m => [m, m]), l.motivo)}</select></label>
+    <label id="leMotRot"${(etapaNova || l.etapa) === "Não fechou" ? "" : " hidden"}>Motivo<select id="leMot"><option value="">Escolha</option>${opcoes((LEADS.motivos || []).map(m => [m, m]), l.motivo)}</select></label>
     <label>Próximo contato<input class="busca" type="date" id="leProx" value="${esc(l.proximo)}"></label>${datasRapidas("leProx")}
     <label>Acrescentar observação (a de antes continua)<input class="busca" id="leObs" maxlength="300"></label>
-    ${l.obs ? `<p class="sub">Observações: ${esc(l.obs)}</p>` : ""}
-    <p class="sub" id="leMsg"></p>
+    ${l.obs && !(l.hist) ? `<p class="sub">Observações: ${esc(l.obs)}</p>` : ""}
+    <p class="sub" id="leMsg">${etapaNova && etapaNova !== l.etapa ? `Mudando de ${esc(l.etapa)} para ${esc(etapaNova)}: confira e salve.` : ""}</p>
     <div class="acoes"><button class="btn amarelo" type="button" id="leOk">Salvar na planilha</button></div></div>`;
   ligarEscolha("leEtapa", v => { $("leMotRot").hidden = v !== "Não fechou"; if (v === "Fechou" || v === "Não fechou") $("leProx").value = ""; });
   if ($("leInt")) ligarEscolha("leInt");
