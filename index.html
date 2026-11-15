@@ -170,6 +170,34 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
 .plano-tr span{color:var(--cinza);font-size:13px}.plano-tr small{display:block;color:var(--cinza);font-size:12px}
 .resumo pre{margin:0;white-space:pre-wrap;font-family:var(--f-num);font-size:12px;max-height:320px;overflow:auto}
 .nota{font-size:12px;color:var(--cinza)}
+/* Minha evolução (desde 15/11/2026) */
+.plano h4{margin:6px 0 0;font-size:14px;font-weight:600}
+.evo-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.evo-card{background:var(--preto);border:1px solid var(--linha);border-radius:12px;padding:10px 12px;min-width:0}
+.evo-card small{display:block;font-size:12px;color:var(--cinza)}
+.evo-card b{display:block;font-family:var(--f-num);font-weight:500;font-size:19px;color:var(--amarelo);margin-top:2px}
+.evo-card span{display:block;font-size:12px;color:var(--cinza);margin-top:2px}
+.evo-graf svg{display:block;width:100%;height:auto}
+.evo-graf .nota{margin:2px 0 0}
+.evo-tab{overflow-x:auto}
+.evo-tab table{width:100%;border-collapse:collapse;font-size:13px}
+.evo-tab th,.evo-tab td{padding:7px 6px;border-bottom:1px solid var(--linha);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.evo-tab th:first-child,.evo-tab td:first-child{text-align:left;white-space:normal}
+.evo-tab th{color:var(--cinza);font-weight:600;font-size:12px}
+.evo-tab small{color:var(--cinza)}
+.evo-sel{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.evo-sel label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--cinza)}
+.evo-sel select{width:100%;background:var(--preto);color:var(--branco);border:1px solid var(--linha);border-radius:10px;padding:10px;font:inherit;font-size:16px}
+.evo-par{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.evo-par.um{grid-template-columns:minmax(0,1fr);max-width:300px}
+.evo-par figure{margin:0;display:flex;flex-direction:column;gap:4px;min-width:0}
+.evo-par figcaption{font-family:var(--f-num);font-size:12px;color:var(--cinza);text-align:center}
+.evo-foto{display:grid;place-items:center;width:100%;aspect-ratio:3/4;padding:0;border:1px solid var(--linha);border-radius:10px;background:var(--preto);overflow:hidden;color:var(--cinza);font-size:12px}
+.evo-foto img{width:100%;height:100%;object-fit:cover;display:block}
+.evo-cheia{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:max(16px,env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))}
+.evo-cheia img{max-width:100%;max-height:calc(100% - 90px);object-fit:contain;border-radius:8px}
+.evo-cheia p{margin:0;font-size:14px}
+.evo-cheia .btn{align-self:flex-end}
 .msg{background:var(--carvao);border:1px solid var(--linha);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
 .msg h2{font-size:18px}
 .msg p{margin:0}
@@ -202,6 +230,11 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
     <h2>Seu planejamento</h2>
     <div id="planoCorpo"></div>
     <button class="btn" id="fecharPlano" type="button">Fechar</button>
+  </section>
+  <section class="resumo plano" id="evolucao" hidden>
+    <h2>Minha evolução</h2>
+    <div id="evoCorpo"></div>
+    <button class="btn" id="fecharEvo" type="button">Fechar</button>
   </section>
   <section class="resumo" id="envio" hidden>
     <h2>Registro da semana</h2>

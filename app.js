@@ -489,6 +489,7 @@ function render(){
   if (d.exercicios.length) h += `<button class="grande" type="button" id="story"><svg class="ig" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.2" fill="currentColor"/></svg> Compartilhar no story</button>`;
   h += `<button class="grande sec" type="button" id="enviar">Ver registro da semana</button>`;
   h += `<button class="grande sec" type="button" id="verPlano">🗺 Ver o planejamento do ciclo</button>`;
+  h += `<button class="grande sec" type="button" id="verEvo">📈 Minha evolução</button>`;
   h += blocoAgenda();
   tela.innerHTML = h; contagem();
   ligarAgenda();
@@ -513,6 +514,7 @@ function render(){
   tela.querySelectorAll("[data-recado]").forEach(b => b.onclick = () => { const k = b.dataset.recado, box = $(`rc-${n}-${k}`); box.hidden = !box.hidden; if (!box.hidden) $(`m-${n}-${k}`).focus(); });
   $("enviar").onclick = mostrarRegistro;
   $("verPlano").onclick = mostrarPlano;
+  $("verEvo").onclick = mostrarEvolucao;
 }
 
 function digitou(inp){
@@ -768,6 +770,112 @@ function mostrarPlano(){
 $("fecharPlano").onclick = () => { $("plano").hidden = true; };
 $("copiar").onclick = async e => { try { await navigator.clipboard.writeText($("texto").textContent); e.target.textContent = "Copiado"; }
   catch(err){ const r = document.createRange(); r.selectNodeContents($("texto")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); e.target.textContent = "Texto selecionado: copie"; } };
+
+// ---------- Minha evolução (desde 15/11/2026, servidor versão 12): presencial vê a avaliação física e as fotos; consultoria, só as fotos ----------
+const K_EVO = "evo:" + CODIGO;
+let EVO = ler(K_EVO), evoLendo = false, EVO_SEL = null;
+const IMG = {}, FILA_FOTOS = []; let fotosBaixando = 0;
+const ANGULOS = ["Frente", "Lado direito", "Lado esquerdo", "Costas"];
+const isoD = s => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; };
+function grafico(pontos, titulo, un){
+  if (pontos.length < 2) return "";
+  const W = 320, H = 140, pe = 40, pd = 12, pt = 12, pb = 22, ys = pontos.map(p => p.y);
+  const folga = (Math.max(...ys) - Math.min(...ys)) * .2 || 1, lo = Math.min(...ys) - folga, hi = Math.max(...ys) + folga;
+  const X = i => pe + i * (W - pe - pd) / (pontos.length - 1), Y = v => pt + (H - pt - pb) * (1 - (v - lo) / (hi - lo));
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}">`;
+  [lo, (lo + hi) / 2, hi].forEach(t => { s += `<line x1="${pe}" x2="${W - pd}" y1="${Y(t)}" y2="${Y(t)}" stroke="#2A2A27"/><text x="${pe - 6}" y="${Y(t) + 4}" text-anchor="end" fill="#8C8A80" font-size="10" font-family="JetBrains Mono, monospace">${fmt(hi - lo < 2 ? t : Math.round(t * 10) / 10)}</text>`; });
+  pontos.forEach((p, i) => { s += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle" fill="#8C8A80" font-size="10" font-family="Inter, sans-serif">${esc(p.x)}</text>`; });
+  s += `<polyline fill="none" stroke="#FFD60A" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="${pontos.map((p, i) => `${X(i)},${Y(p.y)}`).join(" ")}"/>`;
+  pontos.forEach((p, i) => { s += `<circle cx="${X(i)}" cy="${Y(p.y)}" r="4" fill="#FFD60A" stroke="#161616" stroke-width="2"/>`; });
+  const u = pontos[pontos.length - 1];
+  return `<div class="evo-graf"><h4>${esc(titulo)}</h4>${s}</svg><p class="nota">Última: ${fmt(u.y)}${un} (${esc(u.x)})</p></div>`;
+}
+// aba Avaliações (B5:I52): rótulo na coluna B, avaliações de D a I; as linhas são as da planilha (ferramentas/avaliacao-fisica)
+// cada medida é achada pelo rótulo (servidor: avaliacaoLinhas; "Abdômen" = o perímetro, que vem antes da dobra)
+const MEDIDAS = [["Peso","Peso","kg"],["% de gordura","% de gordura","%"],["Massa magra","Massa magra","kg"],["Massa gorda","Massa gorda","kg"],["Cintura","Cintura","cm"],["Abdômen","Abdômen","cm"],["Quadril","Quadril","cm"],
+  ["Braço contraído direito","Braço contraído (dir.)","cm"],["Coxa direita","Coxa (dir.)","cm"],["Panturrilha direita","Panturrilha (dir.)","cm"],["Soma das 7 dobras","Soma das dobras","mm"],["IMC","IMC",""]];
+function avaliacaoEvo(e){
+  const v = e.avaliacao, ini = e.avaliacaoIni || 1, rotLinha = e.avaliacaoLinhas || {};
+  const cel = (rot, c) => rotLinha[rot] ? txt(((v[rotLinha[rot] - ini] || [])[2 + c])) : "";
+  const cols = [0,1,2,3,4,5].filter(c => cel("Data da avaliação", c));
+  if (!cols.length) return `<h3>Avaliação física</h3><p class="nota">A sua primeira avaliação física aparece aqui assim que o seu treinador anotar.</p>`;
+  const rot = c => { const m = /^(\d{1,2})\/(\d{1,2})/.exec(cel("Data da avaliação", c)); return m ? `${m[1].padStart(2,"0")}/${m[2].padStart(2,"0")}` : "Av " + (c + 1); };
+  const serie = L => cols.map(c => ({x: rot(c), y: lerPlanilha(cel(L, c))})).filter(p => p.y !== "");
+  let h = `<h3>Avaliação física</h3><p class="nota">${cols.length === 1 ? `A sua avaliação de ${rot(cols[0])}. Na próxima, você vê aqui o quanto mudou.` : `${cols.length} avaliações: da primeira (${rot(cols[0])}) para a última (${rot(cols[cols.length - 1])}).`}</p>`;
+  h += `<div class="evo-cards">${[["Peso","Peso","kg"],["% de gordura","% de gordura","%"],["Massa magra","Massa magra","kg"],["Cintura","Cintura","cm"]].map(([L, n, un]) => { const s = serie(L); if (!s.length) return "";
+    const u = s[s.length - 1].y, dif = s.length > 1 ? Math.round((u - s[0].y) * 10) / 10 : null;
+    return `<div class="evo-card"><small>${n}</small><b>${fmt(u)}${un === "%" ? "%" : " " + un}</b>${dif != null ? `<span>${dif === 0 ? "igual" : (dif > 0 ? "+" : "") + fmt(dif) + (un === "%" ? " pontos" : " " + un)} desde ${s[0].x}</span>` : ""}</div>`; }).join("")}</div>`;
+  h += grafico(serie("Peso"), "Peso (kg)", " kg") + grafico(serie("% de gordura"), "% de gordura", "%") + grafico(serie("Massa magra"), "Massa magra (kg)", " kg");
+  const linhas = MEDIDAS.map(([L, n, un]) => { const vals = cols.map(c => lerPlanilha(cel(L, c))); if (vals.every(x => x === "")) return "";
+    return `<tr><td>${n}${un ? ` <small>${un}</small>` : ""}</td>${vals.map(x => `<td>${x === "" ? "—" : fmt(x)}</td>`).join("")}</tr>`; }).join("");
+  if (linhas) h += `<div class="evo-tab"><table><thead><tr><th>Medida</th>${cols.map(c => `<th>${rot(c)}</th>`).join("")}</tr></thead><tbody>${linhas}</tbody></table></div>`;
+  return h;
+}
+function fotosEvo(e){
+  const lista = e.fotos || [];
+  if (!lista.length) return `<h3>Fotos</h3><p class="nota">As suas fotos de avaliação aparecem aqui depois que você mandar pelo formulário de fotos.</p><a class="btn" href="${FORM_FOTOS}" target="_blank" rel="noopener">Abrir o formulário de fotos</a>`;
+  const datas = [...new Set(lista.map(f => f.data))].sort();
+  let [a, b] = EVO_SEL || [datas[0], datas[datas.length - 1]];
+  if (!datas.includes(a)) a = datas[0]; if (!datas.includes(b)) b = datas[datas.length - 1];
+  const mostrar = a === b ? [a] : [a, b], rot = s => ddaaaa(isoD(s));
+  let h = `<h3>Fotos</h3>`;
+  if (datas.length > 1) h += `<div class="evo-sel"><label>Antes<select id="evoA">${datas.map(x => `<option value="${x}"${x === a ? " selected" : ""}>${rot(x)}</option>`).join("")}</select></label><label>Depois<select id="evoB">${datas.map(x => `<option value="${x}"${x === b ? " selected" : ""}>${rot(x)}</option>`).join("")}</select></label></div>`;
+  else h += `<p class="nota">As suas fotos de ${rot(datas[0])}. Na reavaliação, elas aparecem lado a lado com as novas.</p>`;
+  ANGULOS.forEach(ang => {
+    if (!mostrar.some(dt => lista.some(f => f.angulo === ang && f.data === dt))) return;
+    h += `<h4>${ang}</h4><div class="evo-par${mostrar.length === 1 ? " um" : ""}">${mostrar.map(dt => { const f = lista.find(x => x.angulo === ang && x.data === dt);
+      return `<figure>${f ? `<button type="button" class="evo-foto" data-foto="${esc(f.id)}" data-leg="${esc(ang + " · " + rot(dt))}" aria-label="Ampliar ${esc(ang)} de ${rot(dt)}"><img alt="${esc(ang)} em ${rot(dt)}" hidden><span>Abrindo…</span></button>` : `<div class="evo-foto"><span>Sem foto</span></div>`}<figcaption>${rot(dt)}</figcaption></figure>`; }).join("")}</div>`;
+  });
+  return h + `<p class="nota">Só você e o seu treinador veem estas fotos.</p>`;
+}
+function pintarEvo(erro){
+  const c = $("evoCorpo"); let h = "";
+  if (!EVO) h = `<p class="carregando">${esc(erro || "Abrindo a sua evolução…")}</p>`;
+  else {
+    if (EVO.modalidade === "presencial") h += EVO.avaliacao ? avaliacaoEvo(EVO) : `<h3>Avaliação física</h3><p class="nota">A sua avaliação física aparece aqui quando estiver no modelo novo da planilha. Fale com o seu treinador.</p>`;
+    h += fotosEvo(EVO);
+    if (erro) h += `<p class="nota">${esc(erro)}</p>`;
+  }
+  c.innerHTML = h;
+  const escolher = () => { EVO_SEL = [$("evoA").value, $("evoB").value]; pintarEvo(); };
+  if ($("evoA")){ $("evoA").onchange = escolher; $("evoB").onchange = escolher; }
+  c.querySelectorAll("[data-foto]").forEach(bt => { const img = bt.querySelector("img"), sp = bt.querySelector("span");
+    carregarFoto(bt.dataset.foto).then(url => { img.src = url; img.hidden = false; sp.remove(); bt.onclick = () => abrirFoto(url, bt.dataset.leg); })
+      .catch(e => { sp.textContent = e.servidor ? "Não abriu" : "Sem internet"; }); });
+}
+async function mostrarEvolucao(){
+  $("evolucao").hidden = false; pintarEvo(); $("evolucao").scrollIntoView({behavior: "smooth"});
+  if (evoLendo) return; evoLendo = true;
+  try { const e = await chamar({acao: "evolucao", codigo: CODIGO}, 60000); EVO = e; guardar(K_EVO, e); pintarEvo(); }
+  catch(e){ pintarEvo(e.servidor ? (/desconhecida/i.test(e.message) ? "Esta parte do app chega em breve." : e.message) : "Sem internet: mostrando o que já estava guardado no celular."); }
+  finally { evoLendo = false; }
+}
+// a foto fica guardada no celular depois da 1ª vez (abre rápido e sem internet)
+function carregarFoto(id){
+  if (IMG[id]) return IMG[id];
+  const k = new URL(`__foto/${encodeURIComponent(id)}`, location.href).href;
+  const p = (async () => {
+    try { if (window.caches){ const r = await (await caches.open("fotos-aluno")).match(k); if (r) return URL.createObjectURL(await r.blob()); } } catch(e){}
+    await new Promise(ok => { FILA_FOTOS.push(ok); andar(); });
+    try {
+      const j = await chamar({acao: "foto", codigo: CODIGO, id}, 60000);
+      const bin = atob(j.b64), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], {type: j.tipo || "image/jpeg"});
+      try { if (window.caches) await (await caches.open("fotos-aluno")).put(k, new Response(blob, {headers: {"Content-Type": blob.type}})); } catch(e){}
+      return URL.createObjectURL(blob);
+    } finally { fotosBaixando--; andar(); }
+  })();
+  IMG[id] = p; p.catch(() => { delete IMG[id]; });
+  return p;
+}
+function andar(){ while (fotosBaixando < 2 && FILA_FOTOS.length){ fotosBaixando++; FILA_FOTOS.shift()(); } }
+function abrirFoto(url, leg){
+  const f = document.createElement("div"); f.className = "evo-cheia"; f.setAttribute("role", "dialog"); f.setAttribute("aria-label", leg);
+  f.innerHTML = `<button type="button" class="btn" aria-label="Fechar">✕ Fechar</button><img src="${esc(url)}" alt="${esc(leg)}"><p>${esc(leg)}</p>`;
+  const fechar = () => { f.remove(); document.removeEventListener("keydown", tecla); }, tecla = e => { if (e.key === "Escape") fechar(); };
+  f.onclick = fechar; document.addEventListener("keydown", tecla); document.body.appendChild(f); f.querySelector("button").focus();
+}
+$("fecharEvo").onclick = () => { $("evolucao").hidden = true; };
 
 // ---------- abrir ----------
 function erroTela(titulo, texto, botao){

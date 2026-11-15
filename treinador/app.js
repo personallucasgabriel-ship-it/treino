@@ -1489,8 +1489,12 @@ function abrirFoto(url, legenda){
 
 // ----- avaliação física (aba Avaliações da planilha "Avaliação <Nome>"; servidor: avSalvar_) -----
 let AV_ED = null, avEnviando = false;   // AV_ED = índice da coluna (0 = avaliação 1, coluna D) que está aberta para editar
-function avCel(d, linha, col){ return txt(((d.avaliacao || [])[linha - (d.avaliacaoIni || 10)] || [])[2 + col]); }
-function avColunas(d){ return [0,1,2,3,4,5].filter(i => avCel(d, 10, i)); }
+// linha de cada rótulo (servidor: avaliacaoLinhas, achadas pelo rótulo da coluna B; sem elas, as linhas da matriz de 13/11/2026)
+const AV_ANTIGA = {"Data da avaliação": 10, "Altura": 13, "% de gordura": 43, "Massa magra": 45, "% de gordura desejado": 46, "Sexo": 5};
+const LN = (d, rot) => (d.avaliacaoLinhas || {})[rot] || AV_ANTIGA[rot] || 0;
+function avCel(d, linha, col){ return linha ? txt(((d.avaliacao || [])[linha - (d.avaliacaoIni || 10)] || [])[2 + col]) : ""; }
+const avData = (d, i) => avCel(d, LN(d, "Data da avaliação"), i);
+function avColunas(d){ return [0,1,2,3,4,5].filter(i => avData(d, i)); }
 function pintarAv(a){
   const el = $("avSec"); if (!el) return;
   const d = DADOS[a.chave] || {};
@@ -1498,15 +1502,15 @@ function pintarAv(a){
   let h = avaliacaoHtml(d);
   if (d.avaliacaoAntiga){ el.innerHTML = h; return; }
   if (!d.avaliacaoCampos){ el.innerHTML = h + `<div class="card"><p class="sub">${d.avaliacao ? AVISO_V11 : "Abrindo a planilha de avaliação…"}</p></div>`; return; }
-  const feitas = avColunas(d), livre = [0,1,2,3,4,5].find(i => !avCel(d, 10, i));
+  const feitas = avColunas(d), livre = [0,1,2,3,4,5].find(i => !avData(d, i));
   h += `<div class="card"><h3>Anotar pelo app</h3><div class="acoes">${livre != null ? `<button class="btn${AV_ED === livre ? " amarelo" : ""}" type="button" id="avNova">${AV_ED === livre ? "Cancelar" : "+ Nova avaliação"}</button>` : ""}
-    ${feitas.map(i => `<button class="btn${AV_ED === i ? " amarelo" : ""}" type="button" data-avcol="${i}">${AV_ED === i ? "Cancelar" : "Editar " + esc(avCel(d, 10, i).slice(0, 5))}</button>`).join("")}</div>
+    ${feitas.map(i => `<button class="btn${AV_ED === i ? " amarelo" : ""}" type="button" data-avcol="${i}">${AV_ED === i ? "Cancelar" : "Editar " + esc(avData(d, i).slice(0, 5))}</button>`).join("")}</div>
     ${livre == null ? `<p class="sub">As 6 avaliações da planilha estão preenchidas. Para a próxima, me peça no chat uma planilha nova.</p>` : ""}<div id="avForm"></div></div>`;
   el.innerHTML = h;
   ligarDicas(el);
   if ($("avNova")) $("avNova").onclick = () => { AV_ED = AV_ED === livre ? null : livre; pintarAv(a); };
   el.querySelectorAll("[data-avcol]").forEach(b => b.onclick = () => { const i = Number(b.dataset.avcol); AV_ED = AV_ED === i ? null : i; pintarAv(a); });
-  if (AV_ED != null) formAvaliacao(a, d, AV_ED, !avCel(d, 10, AV_ED));
+  if (AV_ED != null) formAvaliacao(a, d, AV_ED, !avData(d, AV_ED));
 }
 function formAvaliacao(a, d, col, nova){
   const campos = d.avaliacaoCampos, perfil = d.avaliacaoPerfil || [], feitas = avColunas(d).filter(i => i !== col);
@@ -1514,9 +1518,9 @@ function formAvaliacao(a, d, col, nova){
   // valor de cada campo: o da coluna; na avaliação nova, a altura e o % desejado vêm da última avaliação
   const orig = {}, ini = {};
   campos.forEach(([L, , un]) => { const v = avCel(d, L, col); orig[L] = un === "data" ? isoDePlanilha(v) : v;
-    ini[L] = orig[L] || (nova && un === "data" ? isoDe(hojeZero()) : nova && (L === 13 || L === 46) && ultima != null ? avCel(d, L, ultima) : orig[L]); });
+    ini[L] = orig[L] || (nova && un === "data" ? isoDe(hojeZero()) : nova && (L === LN(d, "Altura") || L === LN(d, "% de gordura desejado")) && ultima != null ? avCel(d, L, ultima) : orig[L]); });
   const pOrig = {}; perfil.forEach(([L, , op]) => { const v = avCel(d, L, 0); pOrig[L] = op === "data" ? isoDePlanilha(v) : v; });
-  const semSexo = !pOrig[5];
+  const semSexo = !pOrig[(perfil.find(p => p[1] === "Sexo") || [])[0]];
   const campoHtml = ([L, rot, un]) => un === "data"
     ? `<label>Data da avaliação<input class="busca" type="date" data-av="${L}" value="${esc(ini[L])}"></label>`
     : `<label>${esc(rot)} (${un})<input class="busca" inputmode="decimal" autocomplete="off" data-av="${L}" value="${esc(ini[L])}"></label>`;
@@ -1524,7 +1528,7 @@ function formAvaliacao(a, d, col, nova){
   const preenchidos = g => grupo(g).filter(c => ini[c[0]]).length;
   const perfilHtml = `<div class="av-grid">${perfil.map(([L, rot, op]) => op === "data"
     ? `<label>${esc(rot)}<input class="busca" type="date" data-perfil="${L}" value="${esc(pOrig[L])}"></label>`
-    : `<label>${esc(L === 5 ? "Sexo" : L === 7 ? "É atleta?" : "Etnia negra? (Evans)")}<select data-perfil="${L}">${L === 5 ? `<option value="">Escolha</option>` : ""}${opcoes(op.map(x => [x, x === "F" ? "Mulher" : x === "M" ? "Homem" : x]), pOrig[L])}</select></label>`).join("")}</div>`;
+    : `<label>${esc(rot === "Sexo" ? "Sexo" : /atleta/i.test(rot) ? "É atleta?" : "Etnia negra? (Evans)")}<select data-perfil="${L}">${rot === "Sexo" ? `<option value="">Escolha</option>` : ""}${opcoes(op.map(x => [x, x === "F" ? "Mulher" : x === "M" ? "Homem" : x]), pOrig[L])}</select></label>`).join("")}</div>`;
   let h = `<div class="card form" style="margin-top:4px"><h3>${nova ? `Avaliação ${col + 1} (nova)` : `Avaliação ${col + 1}`}</h3>`;
   h += semSexo ? `<p class="sub">Escolha o sexo: sem ele, a planilha não calcula o % de gordura.</p>${perfilHtml}` : `<details><summary>Perfil do aluno (vale para todas)</summary>${perfilHtml}</details>`;
   h += `<div class="av-grid">${grupo("Dados").map(campoHtml).join("")}</div>`;
@@ -1544,14 +1548,14 @@ function formAvaliacao(a, d, col, nova){
       if (String(n) !== String(lerPlanilha(orig[L]))) v[L] = n === "" ? "" : String(n);
     });
     document.querySelectorAll("#avForm [data-perfil]").forEach(inp => { const L = Number(inp.dataset.perfil); if (txt(inp.value) !== pOrig[L]) p[L] = txt(inp.value); });
-    if (!txt((document.querySelector('#avForm [data-av="10"]') || {}).value)) erro = erro || "Falta a data da avaliação.";
+    if (!txt((document.querySelector(`#avForm [data-av="${LN(d, "Data da avaliação")}"]`) || {}).value)) erro = erro || "Falta a data da avaliação.";
     if (erro){ $("avMsg").textContent = erro; return; }
     if (!Object.keys(v).length && !Object.keys(p).length){ AV_ED = null; pintarAv(a); return; }
     if (avEnviando) return; avEnviando = true; $("avOk").disabled = true; $("avMsg").textContent = "Salvando na planilha…";
     try {
       const nd = await chamar({acao: "t_av_salvar", aluno: a.chave, col, v, perfil: p}, 60000);
       DADOS[a.chave] = nd; guardar("t_aluno:" + a.chave, nd); AV_ED = null; pintarAv(a);
-      const g = avCel(nd, 43, col), mm = avCel(nd, 45, col);
+      const g = avCel(nd, LN(nd, "% de gordura"), col), mm = avCel(nd, LN(nd, "Massa magra"), col);
       aviso(`Avaliação salva ✓${g ? ` · ${g}% de gordura` : ""}${mm ? ` · massa magra ${mm} kg` : ""}`);
     } catch(e){ $("avOk").disabled = false; $("avMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi salvo. Tente de novo quando a internet voltar."; }
     finally { avEnviando = false; }
