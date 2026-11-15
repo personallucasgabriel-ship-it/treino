@@ -794,14 +794,17 @@ function avaliacaoEvo(e){
   if (linhas) h += `<div class="evo-tab"><table><thead><tr><th>Medida</th>${cols.map(c => `<th>${rot(c)}</th>`).join("")}</tr></thead><tbody>${linhas}</tbody></table></div>`;
   return h;
 }
+// olhinho de esconder (pedido do criador, 15/11/2026): valores do Financeiro e fotos de avaliação; a escolha fica no celular
+const svgOlho = fechado => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>${fechado ? `<path d="M3 3l18 18"/>` : ""}</svg>`;
+const botaoOlho = (id, oculto, oque) => `<button type="button" class="olho" id="${id}" aria-pressed="${oculto}" aria-label="${oculto ? "Mostrar" : "Esconder"} ${oque}">${svgOlho(oculto)}</button>`;
 function fotosEvo(e){
-  const lista = e.fotos || [];
+  const lista = e.fotos || [], fOcultas = !!ler("ocultar-fotos");
   if (!lista.length) return `<h3>Fotos</h3><p class="nota">As suas fotos de avaliação aparecem aqui depois que você mandar pelo formulário de fotos.</p><a class="btn" href="${FORM_FOTOS}" target="_blank" rel="noopener">Abrir o formulário de fotos</a>`;
   const datas = [...new Set(lista.map(f => f.data))].sort();
   let [a, b] = EVO_SEL || [datas[0], datas[datas.length - 1]];
   if (!datas.includes(a)) a = datas[0]; if (!datas.includes(b)) b = datas[datas.length - 1];
   const mostrar = a === b ? [a] : [a, b], rot = s => ddaaaa(isoD(s));
-  let h = `<h3>Fotos</h3>`;
+  let h = `<div class="tit-olho"><h3>Fotos</h3>${botaoOlho("olhoFotos", fOcultas, "as fotos")}</div><div class="${fOcultas ? "fotos-ocultas" : ""}">`;
   if (datas.length > 1) h += `<div class="evo-sel"><label>Antes<select id="evoA">${datas.map(x => `<option value="${x}"${x === a ? " selected" : ""}>${rot(x)}</option>`).join("")}</select></label><label>Depois<select id="evoB">${datas.map(x => `<option value="${x}"${x === b ? " selected" : ""}>${rot(x)}</option>`).join("")}</select></label></div>`;
   else h += `<p class="nota">As suas fotos de ${rot(datas[0])}. Na reavaliação, elas aparecem lado a lado com as novas.</p>`;
   ANGULOS.forEach(ang => {
@@ -809,7 +812,7 @@ function fotosEvo(e){
     h += `<h4>${ang}</h4><div class="evo-par${mostrar.length === 1 ? " um" : ""}">${mostrar.map(dt => { const f = lista.find(x => x.angulo === ang && x.data === dt);
       return `<figure>${f ? `<button type="button" class="evo-foto" data-foto="${esc(f.id)}" data-leg="${esc(ang + " · " + rot(dt))}" aria-label="Ampliar ${esc(ang)} de ${rot(dt)}"><img alt="${esc(ang)} em ${rot(dt)}" hidden><span>Abrindo…</span></button>` : `<div class="evo-foto"><span>Sem foto</span></div>`}<figcaption>${rot(dt)}</figcaption></figure>`; }).join("")}</div>`;
   });
-  return h + `<p class="nota">Só você e o seu treinador veem estas fotos.</p>`;
+  return h + `</div><p class="nota">Só você e o seu treinador veem estas fotos.${fOcultas ? " Toque no olho para mostrar." : ""}</p>`;
 }
 function pintarEvo(erro){
   const c = $("evoCorpo"); let h = cargasEvo();
@@ -821,10 +824,11 @@ function pintarEvo(erro){
   }
   c.innerHTML = h;
   const escolher = () => { EVO_SEL = [$("evoA").value, $("evoB").value]; pintarEvo(); };
+  if ($("olhoFotos")) $("olhoFotos").onclick = () => { guardar("ocultar-fotos", !ler("ocultar-fotos")); pintarEvo(); };
   if ($("evoEx")) $("evoEx").onchange = e => { EVO_EX = e.target.value; guardar("evo-ex:" + CODIGO, EVO_EX); pintarEvo(); };
   if ($("evoA")){ $("evoA").onchange = escolher; $("evoB").onchange = escolher; }
   c.querySelectorAll("[data-foto]").forEach(bt => { const img = bt.querySelector("img"), sp = bt.querySelector("span");
-    carregarFoto(bt.dataset.foto).then(url => { img.src = url; img.hidden = false; sp.remove(); bt.onclick = () => abrirFoto(url, bt.dataset.leg); })
+    carregarFoto(bt.dataset.foto).then(url => { img.src = url; img.hidden = false; sp.remove(); bt.onclick = () => { if (!ler("ocultar-fotos")) abrirFoto(url, bt.dataset.leg); }; })
       .catch(e => { sp.textContent = e.servidor ? "Não abriu" : "Sem internet"; }); });
 }
 async function mostrarEvolucao(){

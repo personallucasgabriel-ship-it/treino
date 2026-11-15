@@ -195,6 +195,10 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
 .refeicao li small{grid-column:1/-1;color:var(--cinza);font-size:12px}
 .planos{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .planos .btn{justify-content:flex-start;white-space:normal;text-align:left}
+.olho{flex:0 0 auto;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--linha);border-radius:999px;background:none;color:var(--branco);padding:0;margin-left:auto}
+.olho[aria-pressed="true"]{color:var(--amarelo);border-color:var(--amarelo)}
+.tit-olho{display:flex;align-items:center;gap:12px}
+.fotos-ocultas .evo-foto img{filter:blur(22px);transform:scale(1.15)}
 .evo-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .evo-card{background:var(--preto);border:1px solid var(--linha);border-radius:12px;padding:10px 12px;min-width:0}
 .evo-card small{display:block;font-size:12px;color:var(--cinza)}

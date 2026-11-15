@@ -995,6 +995,11 @@ const FIN_DESDE = 8;
 let FIN = ler("t_fin"), finLendo = false, finForm = "", finFeito = null, finEnviando = false;
 let finPrefill = "";   // nome vindo dos Leads (lead que fechou)
 const real = n => n == null || n === "" ? "—" : Number(n).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+const din = t => `<span class="din">${t}</span>`;   // valor que o olhinho esconde
+// olhinho de esconder (pedido do criador, 15/11/2026): valores do Financeiro e fotos de avaliação; a escolha fica no celular
+const svgOlho = fechado => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>${fechado ? `<path d="M3 3l18 18"/>` : ""}</svg>`;
+const botaoOlho = (id, oculto, oque) => `<button type="button" class="olho" id="${id}" aria-pressed="${oculto}" aria-label="${oculto ? "Mostrar" : "Esconder"} ${oque}">${svgOlho(oculto)}</button>`;
+
 const pctTxt = n => n == null ? "—" : (n * 100).toLocaleString("pt-BR", {maximumFractionDigits: 1}) + "%";
 const isoDe = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const ddIso = s => { const d = isoData(s); return d ? dd(d) : "—"; };
@@ -1021,7 +1026,9 @@ async function lerFin(silencioso){
 function fatoFin(t, v, s, destaque){ return `<div class="fato${destaque ? " destaque" : ""}"><small>${t}</small><b>${v}</b>${s ? `<span>${s}</span>` : ""}</div>`; }
 
 function telaFin(erro){
-  let h = `<div><div class="eyebrow">Consultoria online</div><h1>Financeiro</h1></div>`;
+  const ocultos = !!ler("t_ocultar_valores");
+  document.body.classList.toggle("esconde-valores", ocultos);
+  let h = `<div class="tit-olho"><div><div class="eyebrow">Consultoria online</div><h1>Financeiro</h1></div>${botaoOlho("olhoFin", ocultos, "os valores")}</div>`;
   if (!FIN){
     h += erro ? `<div class="card"><h2>Não consegui abrir o financeiro</h2><p class="sub">${esc(erro.servidor && /desconhecida/i.test(erro.message) ? "O servidor do app ainda é a versão antiga. Cole o código novo pela página Ligar o app do treinador (versão 8) e toque em ↻." : erro.servidor ? erro.message : "Sem internet. Na primeira vez, o app precisa de internet para ler a planilha do financeiro.")}</p><button class="btn amarelo" type="button" id="finTentar">Tentar de novo</button></div>`
       : `<p class="carregando">Lendo a planilha do financeiro…</p>`;
@@ -1031,12 +1038,12 @@ function telaFin(erro){
     return;
   }
   const r = FIN.resumo || {};
-  if (finFeito) h += `<div class="card ok-card"><h3>Anotado ✓</h3><p class="sub">${esc(finFeito)}</p></div>`;
+  if (finFeito) h += `<div class="card ok-card"><h3>Anotado ✓</h3><p class="sub din">${esc(finFeito)}</p></div>`;
   h += `<div class="fatos">
-    ${fatoFin("Entrou na conta este mês", real(r.entrou), `gastos ${real(r.gastos)}`)}
-    ${fatoFin("Lucro do mês", real(r.lucro), `margem ${pctTxt(r.margem)}`, true)}
-    ${fatoFin("A receber", real((r.em_aberto || 0) + (r.cartao_cair || 0)), `em aberto ${real(r.em_aberto)} · cartão ${real(r.cartao_cair)}`)}
-    ${fatoFin("Receita por mês dos planos", real(r.receita_mensal), plural(r.ativos || 0, "aluno ativo", "alunos ativos"))}
+    ${fatoFin("Entrou na conta este mês", din(real(r.entrou)), `gastos ${din(real(r.gastos))}`)}
+    ${fatoFin("Lucro do mês", din(real(r.lucro)), `margem ${din(pctTxt(r.margem))}`, true)}
+    ${fatoFin("A receber", din(real((r.em_aberto || 0) + (r.cartao_cair || 0))), `em aberto ${din(real(r.em_aberto))} · cartão ${din(real(r.cartao_cair))}`)}
+    ${fatoFin("Receita por mês dos planos", din(real(r.receita_mensal)), plural(r.ativos || 0, "aluno ativo", "alunos ativos"))}
   </div>`;
   h += `<div class="acoes"><button class="btn amarelo" type="button" data-form="pag" aria-pressed="${finForm === "pag"}">+ Pagamento recebido</button><button class="btn" type="button" data-form="gasto" aria-pressed="${finForm === "gasto"}">+ Gasto</button></div>`;
   h += `<div id="finForm"></div>`;
@@ -1044,7 +1051,7 @@ function telaFin(erro){
   // cobrar: pagamentos "Aguardando"
   const ab = (FIN.abertos || []).slice().sort((x, y) => (x.data || "").localeCompare(y.data || ""));
   h += `<section class="secao"><header><h2>Cobrar</h2><span class="cont">${plural(ab.length, "em aberto")}</span></header>`;
-  h += ab.length ? `<div class="lista">${ab.map(p => `<div class="aluno"><span class="bola atencao"></span><span class="meio"><h3>${esc(p.aluno)}</h3><p>${esc(p.plano)} · ${real(p.valor)} · ${esc(p.forma === "Cartão (Eduzz)" ? `cartão ${p.parcelas}x` : p.forma || "")}${p.data ? ` · desde ${ddIso(p.data)}` : ""}</p></span>
+  h += ab.length ? `<div class="lista">${ab.map(p => `<div class="aluno"><span class="bola atencao"></span><span class="meio"><h3>${esc(p.aluno)}</h3><p>${esc(p.plano)} · ${din(real(p.valor))} · ${esc(p.forma === "Cartão (Eduzz)" ? `cartão ${p.parcelas}x` : p.forma || "")}${p.data ? ` · desde ${ddIso(p.data)}` : ""}</p></span>
       <span class="acoes">${p.whats ? `<a class="btn" href="${esc(zapNum(p.whats, MSG.cobrar(p.aluno, p.plano)))}" target="_blank" rel="noopener">Cobrar</a>` : ""}<button class="btn amarelo" type="button" data-recebi="${p.linha}">Recebi</button></span></div>`).join("")}</div>`
     : `<p class="vazio">Nenhum pagamento em aberto.</p>`;
   h += `</section>`;
@@ -1060,6 +1067,7 @@ function telaFin(erro){
   const quando = FIN.lido_em ? new Date(FIN.lido_em) : null;
   h += `<p class="sub">${quando ? `Lido da planilha às ${String(quando.getHours()).padStart(2,"0")}:${String(quando.getMinutes()).padStart(2,"0")} de ${dd(quando)}. ` : ""}<a href="${esc(FIN.planilha || "#")}" target="_blank" rel="noopener">Abrir a planilha</a></p>`;
   $("tela").innerHTML = h;
+  $("olhoFin").onclick = () => { guardar("t_ocultar_valores", !ocultos); telaFin(); };
 
   document.querySelectorAll("[data-form]").forEach(b => b.onclick = () => { finForm = finForm === b.dataset.form ? "" : b.dataset.form; finFeito = null; telaFin(); if (finForm) $("finForm").scrollIntoView({block: "start", behavior: "smooth"}); });
   document.querySelectorAll("[data-recebi]").forEach(b => b.onclick = () => recebi(Number(b.dataset.recebi), b));
@@ -1461,7 +1469,8 @@ function pintarFotos(a){
   if (document.activeElement && document.activeElement.id === "fAnalise") return;   // não apaga o que está sendo escrito
   if (!FOTOS[a.chave]) FOTOS[a.chave] = ler("t_fotos:" + a.chave);
   const lista = FOTOS[a.chave];
-  let h = `<section class="secao"><header><h2>Fotos de avaliação</h2><span class="cont" id="fotosCont"></span></header>`;
+  const fOcultas = !!ler("t_ocultar_fotos");
+  let h = `<section class="secao${fOcultas ? " fotos-ocultas" : ""}"><header><h2>Fotos de avaliação</h2><span class="cont" id="fotosCont"></span>${botaoOlho("olhoFotos", fOcultas, "as fotos")}</header>`;
   if (!v11()){ el.innerHTML = h + `<div class="card"><p class="sub">${AVISO_V11}</p></div></section>`; return; }
   if (!lista){ el.innerHTML = h + `<div class="card"><p class="${FOTOS_ERRO[a.chave] ? "sub" : "carregando"}">${esc(FOTOS_ERRO[a.chave] || "Procurando as fotos na pasta de avaliações…")}</p>${FOTOS_ERRO[a.chave] ? `<div class="acoes"><button class="btn" type="button" id="fotosDeNovo">Tentar de novo</button></div>` : ""}</div></section>`;
     if ($("fotosDeNovo")) $("fotosDeNovo").onclick = () => { delete FOTOS_ERRO[a.chave]; pintarFotos(a); lerFotosAluno(a, true); };
@@ -1501,6 +1510,7 @@ function pintarFotos(a){
   else h += `<p class="sub">${pdfs ? `Nenhum PDF de análise na pasta "Avaliações ${esc(a.nome)}" ainda.` : `Para ver aqui os PDFs de análise que estão na pasta do aluno, cole o código novo do servidor (página Ligar o app do treinador, versão 14) e toque em ↻.`}</p>`;
   h += `<p class="sub">A análise é feita comigo no chat: "compara as fotos de ${esc(primeiro(a.nome))}". Depois de aprovada, salve o PDF em "Avaliações ${esc(a.nome)}" e ele aparece aqui.</p></div></section>`;
   el.innerHTML = h;
+  $("olhoFotos").onclick = () => { guardar("t_ocultar_fotos", !fOcultas); pintarFotos(a); };
   botaoPdf($("pdfFotos"), () => pdfFotos(a));
   $("fAnalise").oninput = e => guardar(chaveAnalise(a, antes, depois), e.target.value);
   el.querySelectorAll("[data-pronto]").forEach(b => b.onclick = () => {
@@ -1514,7 +1524,7 @@ function pintarFotos(a){
   $("fotosDeNovo").onclick = () => { $("fotosDeNovo").disabled = true; lerFotosAluno(a, true); };
   el.querySelectorAll("[data-foto]").forEach(b => {
     const img = b.querySelector("img"), msg = b.querySelector(".foto-msg");
-    carregarFoto(a, b.dataset.foto).then(url => { img.src = url; img.hidden = false; msg.remove(); b.onclick = () => abrirFoto(url, b.dataset.leg); })
+    carregarFoto(a, b.dataset.foto).then(url => { img.src = url; img.hidden = false; msg.remove(); b.onclick = () => { if (!ler("t_ocultar_fotos")) abrirFoto(url, b.dataset.leg); }; })
       .catch(e => { msg.textContent = e.servidor ? "Não abriu" : "Sem internet"; b.onclick = () => pintarFotos(a); });
   });
 }
