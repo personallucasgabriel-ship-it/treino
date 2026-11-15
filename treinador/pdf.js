@@ -156,7 +156,7 @@ function entregarPdf(arq){
     <div class="acoes">${podeMandar ? `<button class="btn amarelo" type="button" id="pdfMandar">Mandar (WhatsApp…)</button>` : ""}
     <a class="btn${podeMandar ? "" : " amarelo"}" href="${url}" download="${esc(arq.name)}" id="pdfBaixar">Baixar</a>
     <a class="btn" href="${url}" target="_blank" rel="noopener">Abrir</a>
-    <button class="btn" type="button" id="pdfFechar">Fechar</button></div><p class="sub" id="pdfMsg"></p></div>`;
+    <button class="btn" type="button" id="pdfFechar">Fechar</button></div><p class="sub" id="pdfMsg">${esc(arq.aviso || "")}</p></div>`;
   const fechar = () => { f.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); };
   f.onclick = e => { if (e.target === f) fechar(); };
   document.body.appendChild(f);
@@ -262,38 +262,94 @@ async function pdfAvaliacao(a){
 }
 
 // ---------- 3. fotos de avaliação, antes × depois (aba Avaliação; as datas escolhidas na tela) ----------
-function fotoJpeg(url){
-  return new Promise((ok, falha) => {
-    const img = new Image();
-    img.onload = () => { const lado = 1100, k = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight));
-      const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
-      const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
-      ok({src: c.toDataURL("image/jpeg", .86), w: c.width, h: c.height}); };
-    img.onerror = () => falha(new Error("Não abriu uma das fotos."));
-    img.src = url;
-  });
+// Enquadramento igual (pedido do criador, 15/11/2026), a mesma conta de .claude/skills/treinador/scripts/corpo.py:
+// o detector de pose do MediaPipe acha o corpo (alto da cabeça à ponta dos pés) e as duas fotos ficam com o corpo
+// do mesmo tamanho e no mesmo lugar, num quadro 9:16. Roda no celular; a foto não sai dele.
+// Sem o detector (sem internet na 1ª vez) ou sem achar o corpo numa das duas: usa a foto inteira e avisa.
+const MP_VERSAO = "1.2.0", MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSAO}`;
+const OCUPA_TOPO = .05, OCUPA_BASE = .95;
+let POSE_P = null;
+function detectorPose(){
+  if (!POSE_P) POSE_P = (async () => {
+    const mp = await import(`${MP_BASE}/vision_bundle.mjs`);
+    const arq = await mp.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+    return mp.PoseLandmarker.createFromOptions(arq, {baseOptions: {modelAssetPath: new URL("pose/pose_landmarker_lite.task", location.href).href, delegate: "CPU"}, runningMode: "IMAGE", numPoses: 1});
+  })();
+  POSE_P.catch(() => { POSE_P = null; });
+  return POSE_P;
 }
-async function pdfFotos(a){
-  const lista = (FOTOS[a.chave] || []).filter(f => f.angulo !== "Outras");
-  if (!lista.length) throw new Error("Nenhuma foto de avaliação na pasta deste aluno.");
-  const datas = [...new Set(lista.map(f => f.data))].sort();
+function abrirImg(url){
+  return new Promise((ok, falha) => { const img = new Image(); img.onload = () => ok(img); img.onerror = () => falha(new Error("Não abriu uma das fotos.")); img.src = url; });
+}
+// devolve {topo, base, cx, span} em pixels da foto, ou null
+function acharCorpo(det, img){
+  const w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, 1000 / Math.max(w, h));
+  const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  const r = det.detect(c); const L = r && r.landmarks && r.landmarks[0];
+  if (!L) return null;
+  const P = i => [L[i].x * w, L[i].y * h];
+  const nariz = P(0), pes = Math.max(...[29, 30, 31, 32].map(i => P(i)[1])), calc = (P(29)[1] + P(30)[1]) / 2;
+  const topo = nariz[1] - .10 * (calc - nariz[1]), cx = [11, 12, 23, 24].reduce((s, i) => s + P(i)[0], 0) / 4, span = pes - topo;
+  return span > h * .2 ? {topo, base: pes, cx, span} : null;
+}
+// quadro larg × alt com o corpo do mesmo tamanho e no mesmo lugar; fora da foto, repete a borda
+function enquadrar(img, ach, larg, alt){
+  const c = document.createElement("canvas"); c.width = larg; c.height = alt; const g = c.getContext("2d");
+  const w = img.naturalWidth, h = img.naturalHeight, esc = alt * (OCUPA_BASE - OCUPA_TOPO) / ach.span;
+  const x0 = ach.cx - larg / esc / 2, y0 = ach.topo - OCUPA_TOPO * alt / esc;
+  const dx = -x0 * esc, dy = -y0 * esc, dw = w * esc, dh = h * esc;
+  g.drawImage(img, 0, 0, 1, 1, 0, 0, larg, alt);   // fundo: a cor do canto
+  if (dx > 0) g.drawImage(img, 0, 0, 1, h, 0, dy, dx, dh);
+  if (dx + dw < larg) g.drawImage(img, w - 1, 0, 1, h, dx + dw, dy, larg - dx - dw, dh);
+  if (dy > 0) g.drawImage(img, 0, 0, w, 1, dx, 0, dw, dy);
+  if (dy + dh < alt) g.drawImage(img, 0, h - 1, w, 1, dx, dy + dh, dw, alt - dy - dh);
+  g.drawImage(img, dx, dy, dw, dh);
+  return {src: c.toDataURL("image/jpeg", .86), w: larg, h: alt};
+}
+function fotoInteira(img){
+  const k = Math.min(1, 1100 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+  return {src: c.toDataURL("image/jpeg", .86), w: c.width, h: c.height};
+}
+// a análise que o criador escreve no app (campo "Sua análise"), guardada no celular por aluno e par de datas
+const chaveAnalise = (a, antes, depois) => `t_analise:${a.chave}:${antes}:${depois}`;
+function datasFotos(a){
+  const lista = (FOTOS[a.chave] || []).filter(f => f.angulo !== "Outras"), datas = [...new Set(lista.map(f => f.data))].sort();
   let [antes, depois] = FOTO_SEL[a.chave] || [datas[0], datas[datas.length - 1]];
   if (!datas.includes(antes)) antes = datas[0]; if (!datas.includes(depois)) depois = datas[datas.length - 1];
+  return {lista, datas, antes, depois};
+}
+async function pdfFotos(a){
+  const {lista, antes, depois} = datasFotos(a);
+  if (!lista.length) throw new Error("Nenhuma foto de avaliação na pasta deste aluno.");
   const mostrar = antes === depois ? [antes] : [antes, depois], rot = s => ddaaaa(isoData(s));
   const angs = FOTO_ANGULOS.filter(ang => mostrar.some(dt => lista.some(f => f.angulo === ang && f.data === dt)));
-  // baixa as fotos antes de montar (ficam guardadas no celular depois da 1ª vez)
+  // baixa as fotos (ficam guardadas no celular depois da 1ª vez)
   const imgs = {};
   await Promise.all(angs.flatMap(ang => mostrar.map(async dt => { const f = lista.find(x => x.angulo === ang && x.data === dt); if (!f) return;
-    try { imgs[ang + "|" + dt] = await fotoJpeg(await carregarFoto(a, f.id)); } catch(e){ imgs[ang + "|" + dt] = null; } })));
+    try { imgs[ang + "|" + dt] = await abrirImg(await carregarFoto(a, f.id)); } catch(e){ imgs[ang + "|" + dt] = null; } })));
   if (!Object.values(imgs).some(Boolean)) throw new Error("Não consegui abrir as fotos. Confira a internet e tente de novo.");
+  let det = null, semAjuste = [];
+  try { det = await detectorPose(); } catch(e){ console.warn(e); }
+  const prontas = {};
+  angs.forEach(ang => {
+    const ims = mostrar.map(dt => imgs[ang + "|" + dt]);
+    let achs = null;
+    if (det) try { achs = ims.map(im => im ? acharCorpo(det, im) : null); } catch(e){ console.warn(e); }
+    const ok = achs && ims.every((im, j) => !im || achs[j]);
+    if (!ok) semAjuste.push(ang);
+    mostrar.forEach((dt, j) => { const im = ims[j]; if (im) prontas[ang + "|" + dt] = ok ? enquadrar(im, achs[j], 900, 1600) : fotoInteira(im); });
+  });
+  const analise = txt(ler(chaveAnalise(a, antes, depois)) || "");
   const R = await novoPdf("Fotos de avaliação", mostrar.length > 1 ? "Antes e depois" : "Avaliação", a.nome,
     mostrar.length > 1 ? `${rot(antes)} e ${rot(depois)}` : rot(antes));
   const {doc, M, L} = R, g = 6, w = mostrar.length > 1 ? (L - g) / 2 : L * .62, alt = 100;
-  angs.forEach((ang, k) => {
+  angs.forEach(ang => {
     R.precisa(alt + 20);   // 1 ângulo na 1ª página (embaixo do título), 2 nas outras
     R.h2(ang);
     mostrar.forEach((dt, j) => {
-      const x = mostrar.length > 1 ? M + j * (w + g) : M + (L - w) / 2, y = R.y, im = imgs[ang + "|" + dt];
+      const x = mostrar.length > 1 ? M + j * (w + g) : M + (L - w) / 2, y = R.y, im = prontas[ang + "|" + dt];
       R.cor(COR.fundo, "f"); doc.rect(x, y, w, alt, "F");
       if (im){ const s = Math.min(w / im.w, alt / im.h), iw = im.w * s, ih = im.h * s; doc.addImage(im.src, "JPEG", x + (w - iw) / 2, y + (alt - ih) / 2, iw, ih); }
       else { doc.setFontSize(9); R.cor(COR.sub); doc.text("Sem foto", x + w / 2, y + alt / 2, {align: "center"}); }
@@ -302,6 +358,13 @@ async function pdfFotos(a){
     });
     R.y += alt + 11;
   });
+  if (analise){
+    R.h2("Análise", "Lucas Gabriel · Treinador");
+    analise.split(/\n+/).map(t => t.trim()).filter(Boolean).forEach(t => R.p(t, 10, COR.texto));
+  }
   R.p("Fotos de uso pessoal: só você e o seu treinador.", 8);
-  return R.fim(`Fotos de avaliação ${a.nome} ${isoDe(hojeZero())}`);
+  const arq = R.fim(`Fotos de avaliação ${a.nome} ${isoDe(hojeZero())}`);
+  if (semAjuste.length) arq.aviso = det ? `Não achei o corpo inteiro em ${semAjuste.join(", ")}: ${semAjuste.length > 1 ? "esses ângulos foram" : "esse ângulo foi"} com a foto inteira, sem igualar o enquadramento.`
+    : "Sem internet para abrir o ajuste das fotos: elas foram inteiras, sem igualar o enquadramento.";
+  return arq;
 }

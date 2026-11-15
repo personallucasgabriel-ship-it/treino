@@ -1444,6 +1444,7 @@ async function lerFotosAluno(a, deNovo){
 }
 function pintarFotos(a){
   const el = $("fotosSec"); if (!el) return;
+  if (document.activeElement && document.activeElement.id === "fAnalise") return;   // não apaga o que está sendo escrito
   if (!FOTOS[a.chave]) FOTOS[a.chave] = ler("t_fotos:" + a.chave);
   const lista = FOTOS[a.chave];
   let h = `<section class="secao"><header><h2>Fotos de avaliação</h2><span class="cont" id="fotosCont"></span></header>`;
@@ -1471,7 +1472,10 @@ function pintarFotos(a){
       return `<figure>${f ? `<button type="button" class="foto" data-foto="${esc(f.id)}" data-leg="${esc(`${ang} · ${rotData(dt)}`)}" aria-label="Ampliar ${esc(ang)} de ${rotData(dt)}"><img alt="${esc(ang)} em ${rotData(dt)}" hidden><span class="foto-msg">Abrindo…</span></button>` : `<div class="foto vazia"><span class="foto-msg">Sem foto</span></div>`}<figcaption>${rotData(dt)}</figcaption></figure>`; }).join("")}</div></div>`;
   });
   const pasta = (lista.find(f => f.pasta) || {}).pasta;
-  h += `<p class="sub">Toque numa foto para ver grande. O PDF das fotos sai com as datas escolhidas acima.</p>
+  // "Sua análise" (pedido do criador, 15/11/2026): vai no PDF das fotos; fica guardada no celular, por par de datas
+  h += `<label class="sub" for="fAnalise">Sua análise (vai no PDF das fotos${mostrar.length > 1 ? `, ${rotData(antes)} e ${rotData(depois)}` : ""})</label>
+    <textarea id="fAnalise" class="nota" rows="5" placeholder="Escreva ou cole aqui. Cada parágrafo numa linha.">${esc(ler(chaveAnalise(a, antes, depois)) || "")}</textarea>`;
+  h += `<p class="sub">Toque numa foto para ver grande. O PDF das fotos sai com as datas escolhidas acima e o mesmo enquadramento nas duas fotos.</p>
     <div class="acoes"><button class="btn amarelo" type="button" id="pdfFotos">📄 PDF das fotos${mostrar.length > 1 ? " (antes e depois)" : ""}</button>${pasta ? `<a class="btn" href="${esc(pasta)}" target="_blank" rel="noopener">Abrir a pasta</a>` : ""}<button class="btn" type="button" id="fotosDeNovo">Procurar fotos novas</button></div></div></section>`;
   // análise das fotos: os PDFs aprovados que estão na pasta "Avaliações <Nome>" (skill treinador, 9.9; servidor versão 14)
   if (!PDFS_AV[a.chave]) PDFS_AV[a.chave] = ler("t_pdfs:" + a.chave);
@@ -1483,6 +1487,7 @@ function pintarFotos(a){
   h += `<p class="sub">A análise é feita comigo no chat: "compara as fotos de ${esc(primeiro(a.nome))}". Depois de aprovada, salve o PDF em "Avaliações ${esc(a.nome)}" e ele aparece aqui.</p></div></section>`;
   el.innerHTML = h;
   botaoPdf($("pdfFotos"), () => pdfFotos(a));
+  $("fAnalise").oninput = e => guardar(chaveAnalise(a, antes, depois), e.target.value);
   const escolher = () => { FOTO_SEL[a.chave] = [$("fAntes").value, $("fDepois").value]; pintarFotos(a); };
   if ($("fAntes")){ $("fAntes").onchange = escolher; $("fDepois").onchange = escolher; }
   $("fotosDeNovo").onclick = () => { $("fotosDeNovo").disabled = true; lerFotosAluno(a, true); };

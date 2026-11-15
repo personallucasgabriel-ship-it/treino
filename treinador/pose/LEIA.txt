@@ -1,0 +1,4 @@
+pose_landmarker_lite.task: modelo de pose do MediaPipe (Google), licença Apache 2.0, de
+https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task
+(o mesmo que .claude/skills/treinador/scripts/corpo.py usa). O código do MediaPipe (@mediapipe/tasks-vision 1.2.0)
+vem do cdn.jsdelivr.net na primeira vez que o PDF das fotos é feito. Usado em pdf.js para igualar o enquadramento.
