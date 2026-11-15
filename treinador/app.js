@@ -1211,7 +1211,7 @@ function contatoLink(c){
   return null;
 }
 function lerLeadsDe(j){
-  LEADS = {leads: j.leads, origens: j.origens, interesses: j.interesses, etapas: j.etapas, motivos: j.motivos, planilha: j.planilha, lido_em: j.lido_em, ig: j.ig || null};
+  LEADS = {leads: j.leads, origens: j.origens, interesses: j.interesses, etapas: j.etapas, motivos: j.motivos, planilha: j.planilha, lido_em: j.lido_em, ig: j.ig || null, sugestoes: j.sugestoes || []};
   guardar("t_leads", LEADS);
 }
 async function lerLeads(silencioso){
@@ -1251,8 +1251,11 @@ function telaLeads(erro){
     ${fatoFin("Vendas", at.vendas, `${difTxt(at.vendas - ant.vendas)} sobre ${nomeAnt}`, true)}
     ${fatoFin("Conversão (lead → venda)", at.conv + "%", `${difTxt(at.conv - ant.conv, " pontos")} sobre ${nomeAnt}`)}
   </div>`;
-  h += `<div class="acoes"><button class="btn amarelo" type="button" id="ldNovo" aria-pressed="${leadForm}">+ Lead</button>${escolha("ldVista", [["lista", "Lista"], ["quadro", "Quadro"]], leadsVista)}</div><div id="ldForm"></div>`;
+  h += `<div class="acoes"><button class="btn amarelo" type="button" id="ldNovo" aria-pressed="${!!leadForm}">+ Lead</button>${escolha("ldVista", [["lista", "Lista"], ["quadro", "Quadro"]], leadsVista)}</div><div id="ldForm"></div>`;
   h += cartaoInstagram();
+  const sug = LEADS.sugestoes || [];
+  if (sug.length) h += `<section class="secao"><header><h2>Sugestões do Instagram</h2><span class="cont">você decide</span></header><div class="lista">${sug.map(x => `<div class="lead sug"><div class="aluno"><span class="bola t-morno"></span><span class="meio"><h3>@${esc(x.usuario)}</h3><p>${esc([x.acao + " em " + ddIso(x.ultima), x.obs].filter(Boolean).join(" · "))}</p></span>
+    <span class="acoes"><a class="btn" href="https://instagram.com/${esc(x.usuario)}" target="_blank" rel="noopener">Ver</a><button class="btn amarelo" type="button" data-sug="${esc(x.usuario)}" data-orig="${esc(x.origem)}">Pôr como lead</button><button class="btn" type="button" data-ign="${esc(x.usuario)}">Ignorar</button></span></div></div>`).join("")}</div></section>`;
   if (leadsVista === "quadro"){
     const limite = isoDe(new Date(hoje.getFullYear(), hoje.getMonth() - 3, hoje.getDate()));
     const aberto = (LEADS.leads || []).find(l => l.linha === leadAberto);
@@ -1305,6 +1308,10 @@ function telaLeads(erro){
   document.querySelectorAll("[data-fechar]").forEach(b => b.onclick = () => { leadAberto = 0; telaLeads(); });
   ligarEscolha("ldVista", v => { leadsVista = v; guardar("t_leads_vista", v); leadAberto = 0; telaLeads(); });
   ligarQuadro(); ligarInstagram();
+  document.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { leadForm = {contato: "@" + b.dataset.sug, origem: b.dataset.orig}; leadAberto = 0; leadFeito = null; telaLeads(); if ($("lnNome")) $("lnNome").focus(); });
+  document.querySelectorAll("[data-ign]").forEach(b => b.onclick = async () => { if (leadEnviando) return; leadEnviando = true; b.disabled = true;
+    try { lerLeadsDe(await chamar({acao: "t_ig_ignorar", usuario: b.dataset.ign}, 60000)); leadFeito = {texto: `@${b.dataset.ign} saiu das sugestões.`}; telaLeads(); }
+    catch(e){ b.disabled = false; aviso(e.servidor ? e.message : "Sem internet: tente de novo."); } finally { leadEnviando = false; } });
   if (leadForm) formLead();
   if (leadAberto) editarLead((LEADS.leads || []).find(l => l.linha === leadAberto), leadEtapaNova);
   if (!quando || Date.now() - quando > 5 * 60e3) lerLeads(true);
@@ -1329,7 +1336,7 @@ function cartaoInstagram(){
   const quando = ig.lido_em ? new Date(ig.lido_em) : null, u = ig.ultimo;
   let h = `<div class="card ig"><div class="ig-topo"><h3>📷 Instagram automático</h3><span class="termo ${ig.ligado ? "t-ok" : "t-frio"}">${ig.ligado ? "ligado" : "desligado"}</span></div>`;
   if (ig.ligado){
-    h += `<p class="sub">${ig.usuario ? `Conta @${esc(ig.usuario)}. ` : ""}Todo dia às 7h eu leio os comentários, as DMs e as respostas de story e anoto no termômetro.${quando ? ` Última leitura: ${dd(quando)} às ${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}${u ? ` (${plural(u.interacoes || 0, "ação", "ações")}, ${plural(u.leads_novos || 0, "lead novo", "leads novos")})` : ""}.` : ""}</p>`;
+    h += `<p class="sub">${ig.usuario ? `Conta @${esc(ig.usuario)}. ` : ""}Todo dia às 7h eu leio os comentários, as DMs e as respostas de story e anoto no termômetro. Quem ainda não é lead aparece em Sugestões: você decide.${quando ? ` Última leitura: ${dd(quando)} às ${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}${u ? ` (${plural(u.interacoes || 0, "ação", "ações")}, ${plural(u.leads_novos || 0, "sugestão de lead", "sugestões de lead")})` : ""}.` : ""}</p>`;
     if (ig.erro) h += `<p class="sub erro">O Instagram respondeu: ${esc(ig.erro)}. Se falar de chave ou "token", gere uma chave nova e troque aqui.</p>`;
     if (!ig.despertador) h += `<p class="sub erro">O despertador das 7h não está ligado: troque a chave (cole a mesma) para ligar de novo.</p>`;
     h += `<div class="acoes"><button class="btn amarelo" type="button" id="igAgora">Ler agora</button><button class="btn" type="button" id="igTrocar">${igAberto ? "Cancelar" : "Trocar a chave"}</button><button class="btn" type="button" id="igDesl">Desligar</button></div>`;
@@ -1353,7 +1360,7 @@ function ligarInstagram(){
   };
   if ($("igOk")) $("igOk").onclick = () => { const t = ($("igChave").value || "").replace(/\s+/g, ""); if (t.length < 50){ $("igMsg").textContent = "Cole o código inteiro (ele é bem comprido)."; return; }
     enviar({acao: "t_ig_chave", token: t}, "Conferindo com o Instagram…", f => ({texto: `Instagram ligado${f.usuario ? ` (@${f.usuario})` : ""}. Amanhã às 7h sai a primeira leitura; para ver já, toque em Ler agora.`})); };
-  if ($("igAgora")) $("igAgora").onclick = () => enviar({acao: "t_ig_agora"}, "Lendo o Instagram… (pode levar 1 minuto)", f => ({texto: f.ig === "lido" ? `Li o Instagram: ${plural(f.interacoes || 0, "ação nova", "ações novas")}, ${plural(f.leads_novos || 0, "lead novo", "leads novos")}.${f.erro ? ` Aviso: ${f.erro}` : ""}` : "O Instagram não está ligado."}));
+  if ($("igAgora")) $("igAgora").onclick = () => enviar({acao: "t_ig_agora"}, "Lendo o Instagram… (pode levar 1 minuto)", f => ({texto: f.ig === "lido" ? `Li o Instagram: ${plural(f.interacoes || 0, "ação nova", "ações novas")}, ${plural(f.leads_novos || 0, "sugestão de lead nova", "sugestões de lead novas")}.${f.erro ? ` Aviso: ${f.erro}` : ""}` : "O Instagram não está ligado."}));
   if ($("igDesl")) $("igDesl").onclick = () => { if (confirm("Desligar o Instagram automático? A chave sai do servidor e a leitura das 7h para. O que já foi anotado continua.")) enviar({acao: "t_ig_desligar"}, "Desligando…", () => ({texto: "Instagram automático desligado."})); };
 }
 
@@ -1361,12 +1368,13 @@ function datasRapidas(id){ return `<div class="filtros" role="group" id="${id}R"
 function ligarDatas(id){ document.querySelectorAll(`#${id}R button`).forEach(b => b.onclick = () => { const n = Number(b.dataset.d), h = hojeZero(); $(id).value = n ? isoDe(new Date(h.getFullYear(), h.getMonth(), h.getDate() + n)) : ""; }); }
 
 function formLead(){
+  const pre = typeof leadForm === "object" ? leadForm : {};
   $("ldForm").innerHTML = `<div class="card form"><h2>Lead novo</h2>
-    <label>Nome<input class="busca" id="lnNome" maxlength="120" autocomplete="off"></label>
-    <label>@ do Instagram ou WhatsApp<input class="busca" id="lnContato" maxlength="120" autocomplete="off" placeholder="@fulana ou 44999999999"></label>
-    <div><span class="rot">De onde veio</span>${escolha("lnOrigem", (LEADS.origens || []).map(o => [o, o]), "DM")}</div>
+    <label>Nome<input class="busca" id="lnNome" maxlength="120" autocomplete="off" value="${esc(pre.contato || "")}"></label>
+    <label>@ do Instagram ou WhatsApp<input class="busca" id="lnContato" maxlength="120" autocomplete="off" placeholder="@fulana ou 44999999999" value="${esc(pre.contato || "")}"></label>
+    <div><span class="rot">De onde veio</span>${escolha("lnOrigem", (LEADS.origens || []).map(o => [o, o]), pre.origem || "DM")}</div>
     <div><span class="rot">Interesse</span>${escolha("lnInt", [["Consultoria online", "Consultoria online"], ["Personal presencial", "Presencial"]], "Consultoria online")}</div>
-    <div><span class="rot">Etapa</span>${escolha("lnEtapa", [["Novo", "Novo"], ["Conversando", "Conversando"], ["Proposta enviada", "Proposta enviada"]], "Conversando")}</div>
+    <div><span class="rot">Etapa</span>${escolha("lnEtapa", [["Novo", "Novo"], ["Conversando", "Conversando"], ["Proposta enviada", "Proposta enviada"]], pre.contato ? "Novo" : "Conversando")}</div>
     <label>Próximo contato<input class="busca" type="date" id="lnProx"></label>${datasRapidas("lnProx")}
     <label>Observação (opcional)<input class="busca" id="lnObs" maxlength="500"></label>
     <p class="sub" id="lnMsg"></p>
