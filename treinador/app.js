@@ -299,7 +299,7 @@ function telaAluno(chave, aba){
   const a = alunoPorChave(chave);
   if (!a){ $("tela").innerHTML = `<a class="voltar" href="#/alunos">‹ Alunos</a><div class="card"><h2>Aluno não encontrado</h2><p class="sub">Ele pode ter ido para Inativos. Toque em ↻ para ler o Drive de novo.</p></div>`; return; }
   const [nivel, frase] = situacao(a);
-  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []);
+  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []).concat(temProto && a.modelo === "novo" && (INICIO.versao || 0) >= PRESC_DESDE ? [["treino","Treino"]] : []);
   if (!abas.some(x => x[0] === aba)) aba = "resumo";
   let h = `<a class="voltar" href="#/alunos">‹ Alunos</a>
     <div><div class="eyebrow">${a.modalidade === "presencial" ? "Presencial" : "Consultoria online"}</div><h1>${esc(a.nome)}</h1></div>
@@ -309,7 +309,7 @@ function telaAluno(chave, aba){
     <div id="corpo" class="wrap" style="width:100%"></div>`;
   $("tela").innerHTML = h;
   if (aba === "resumo") resumoAluno(a);
-  else carregarAluno(a, () => aba === "evolucao" ? evolucaoAluno(a) : registrarAluno(a));
+  else carregarAluno(a, () => aba === "evolucao" ? evolucaoAluno(a) : aba === "treino" ? prescricaoAluno(a) : registrarAluno(a));
 }
 
 // no Registrar: os outros alunos com Protocolo, primeiro os do presencial que treinam hoje
@@ -380,7 +380,7 @@ async function carregarAluno(a, depois){
   else corpo.innerHTML = `<p class="carregando">Abrindo a planilha de ${esc(primeiro(a.nome))}…</p>`;
   try {
     const d = await chamar({acao: "t_aluno", aluno: a.chave});
-    const mudou = !guardado || JSON.stringify([d.treino, d.reg, d.cardio, d.avaliacao, d.grupos]) !== JSON.stringify([guardado.treino, guardado.reg, guardado.cardio, guardado.avaliacao, guardado.grupos]);
+    const mudou = !guardado || JSON.stringify([d.treino, d.reg, d.cardio, d.avaliacao, d.grupos, d.prescricao]) !== JSON.stringify([guardado.treino, guardado.reg, guardado.cardio, guardado.avaliacao, guardado.grupos, guardado.prescricao]);
     DADOS[a.chave] = d; guardar("t_aluno:" + a.chave, d);
     const r = rota(); if (r.tela !== "a" || r.chave !== a.chave) return;
     if (mudou){ const foco = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName); if (!foco) depois(); else precisaRender = true; }
@@ -1291,6 +1291,104 @@ function editarLead(l){
   };
 }
 
+// ---------- PRESCRIÇÃO (servidor versão 10; aba Treino do Protocolo, skill treinador, seção 3) ----------
+// Muda exercício, séries, técnica e observação nos 9 lugares fixos de cada treino; e começa o ciclo novo a partir do atual.
+// Faixas de repetição, periodização e cardio continuam na planilha (computador).
+const PRESC_DESDE = 10;
+let PRESC_ED = "", PRESC_CICLO = false, prescEnviando = false;
+function semanasAnotadas(d, nome){
+  const ws = new Set();
+  Object.values(d.reg || {}).forEach(v => { for (let w = 1; w <= 12; w++) for (let k = 1; k <= 9; k++){ const row = v[linhaReg(w, k)] || [];
+    if (nomeDaLinha(row) === nome && row.slice(1, 11).some(x => txt(x) !== "")) ws.add(w); } });
+  return ws.size;
+}
+function prescricaoAluno(a){
+  const d = DADOS[a.chave] || {}, p = d.prescricao, c = ciclo(a);
+  if (!p){ $("corpo").innerHTML = `<div class="card"><p class="sub">${esc(d.prescricaoErro || "Para mudar o treino pelo app, cole o código novo do servidor (página Ligar o app do treinador, versão 10) e toque em ↻.")}</p></div>`; return; }
+  const T = lerTreino(d.treino || []), diasDe = L => ORDEM.filter(x => T.periodo[x] === L).map(x => NOMES[x].slice(0, 3).toLowerCase());
+  let h = `<div class="card"><h3>Ciclo atual</h3><p class="sub">${c.entrega ? `Começou em ${ddaaaa(c.entrega)}` : "Sem data de entrega"}${c.revisao ? ` · revisão em ${ddaaaa(c.revisao)}` : ""}${c.semana ? ` · semana ${Math.min(c.semana, c.total)} de ${c.total}` : ""}</p>
+    <div class="acoes"><button class="btn${PRESC_CICLO ? " amarelo" : ""}" type="button" id="cnAbrir">Começar o ciclo novo a partir deste</button></div><div id="cnForm"></div></div>`;
+  ["A","B","C","D","E"].forEach(L => {
+    const slots = (p.treinos || {})[L] || [], usados = slots.filter(s => s.nome), vago = slots.find(s => !s.nome), dias = diasDe(L);
+    if (!usados.length && !dias.length) return;
+    h += `<section class="secao"><header><h2>Treino ${L}</h2><span class="cont">${dias.length ? dias.join(", ") : "fora da periodização"}</span></header><div class="lista">`;
+    usados.forEach((s, i) => { const id = `${L}|${s.k}`, aberto = PRESC_ED === id;
+      h += `<div class="lead${aberto ? " aberto" : ""}"><div class="aluno"><span class="n-ex">${i + 1}</span><span class="meio"><h3>${esc(s.nome)}</h3><p>${esc([s.series ? plural(Number(s.series) || 0, "série") : "sem séries", s.tecnica].filter(Boolean).join(" · "))}${s.obs ? `<br>${esc(s.obs)}` : ""}</p></span>
+        <button class="btn${aberto ? " amarelo" : ""}" type="button" data-ed="${id}">${aberto ? "Cancelar" : "Editar"}</button></div>${aberto ? `<div id="exEd"></div>` : ""}</div>`; });
+    if (vago){ const id = `${L}|${vago.k}`, aberto = PRESC_ED === id;
+      h += aberto ? `<div class="lead aberto"><div id="exEd"></div></div>` : `<div><button class="btn" type="button" data-ed="${id}">+ Adicionar exercício</button></div>`; }
+    h += `</div></section>`;
+  });
+  h += `<p class="sub">Faixas de repetição, periodização e cardio continuam na planilha.${a.planilha ? ` <a href="${esc(a.planilha)}" target="_blank" rel="noopener">Abrir a planilha</a>` : ""}</p>`;
+  $("corpo").innerHTML = h;
+  document.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => { PRESC_ED = PRESC_ED === b.dataset.ed ? "" : b.dataset.ed; PRESC_CICLO = false; prescricaoAluno(a); });
+  $("cnAbrir").onclick = () => { PRESC_CICLO = !PRESC_CICLO; PRESC_ED = ""; prescricaoAluno(a); };
+  if (PRESC_ED && $("exEd")) editarExercicio(a, d, p);
+  if (PRESC_CICLO) formCiclo(a, c);
+}
+
+function editarExercicio(a, d, p){
+  const [L, kk] = PRESC_ED.split("|"), k = Number(kk), s = ((p.treinos || {})[L] || [])[k] || {}, novo = !s.nome;
+  const nomes = [...new Set((d.videos || []).map(r => txt(r[0])).filter(n => n && !/^exerc[íi]cio/i.test(n)))].sort((x, y) => x.localeCompare(y, "pt-BR"));
+  $("exEd").innerHTML = `<div class="card form"><h3>${novo ? `Exercício novo no Treino ${L}` : "Editar exercício"}</h3>
+    <label>Exercício (da lista de vídeos)<input class="busca" id="exNome" list="exNomes" autocomplete="off" value="${esc(s.nome || "")}" placeholder="Comece a digitar"></label>
+    <datalist id="exNomes">${nomes.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+    <label>Séries<select id="exSeries">${opcoes(Array.from({length: 10}, (_, i) => [String(i + 1), String(i + 1)]), String(Number(s.series) || 3))}</select></label>
+    <label>Técnica<select id="exTec"><option value="">Nenhuma</option>${opcoes((p.tecnicas || []).map(t => [t, t]), s.tecnica)}</select></label>
+    <label>Observação${k === 0 ? " (no 1º exercício, ela também vale como aviso do treino todo)" : ""}<textarea class="busca" id="exObs" rows="3" maxlength="500">${esc(s.obs || "")}</textarea></label>
+    <p class="sub" id="exMsg"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="exOk">Salvar na planilha</button>${novo ? "" : `<button class="btn" type="button" id="exTirar">Tirar do treino</button>`}</div></div>`;
+  const mandar = async (m, texto) => {
+    if (prescEnviando) return; prescEnviando = true; $("exOk").disabled = true; $("exMsg").textContent = "Salvando…";
+    try {
+      const nd = await chamar({acao: "t_treino_mudar", aluno: a.chave, letra: L, k, m}, 60000);
+      DADOS[a.chave] = nd; guardar("t_aluno:" + a.chave, nd); PRESC_ED = ""; prescricaoAluno(a); aviso(texto);
+    } catch(e){ $("exOk").disabled = false; $("exMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi salvo. Tente de novo quando a internet voltar."; }
+    finally { prescEnviando = false; }
+  };
+  $("exOk").onclick = () => {
+    const nome = txt($("exNome").value), achou = nomes.find(n => n.toLowerCase() === nome.toLowerCase());
+    if (!achou){ $("exMsg").textContent = "Escolha um exercício da lista (é dela que saem o vídeo e o volume)."; return; }
+    if (!novo && achou !== s.nome){ const n = semanasAnotadas(d, s.nome);
+      if (n && !confirm(`${s.nome} já tem ${plural(n, "semana anotada", "semanas anotadas")} neste ciclo. Depois da troca, essas semanas vão aparecer com o nome novo (${achou}) no histórico. Trocar mesmo assim?`)) return; }
+    mandar({nome: achou, series: Number($("exSeries").value), tecnica: $("exTec").value, obs: $("exObs").value}, novo ? "Exercício adicionado ✓" : "Treino atualizado ✓");
+  };
+  if ($("exTirar")) $("exTirar").onclick = () => { const n = semanasAnotadas(d, s.nome);
+    if (!confirm(`Tirar ${s.nome} do Treino ${L}?${n ? ` Ele tem ${plural(n, "semana anotada", "semanas anotadas")}: os números continuam na planilha, mas somem do histórico do app.` : ""}`)) return;
+    mandar({remover: true}, "Exercício tirado do treino ✓"); };
+}
+
+function formCiclo(a, c){
+  const fim = fimDoPlano(c), h = hojeZero();
+  const ini = fim ? new Date(fim.getFullYear(), fim.getMonth(), fim.getDate() + 1) : proximaSegunda();
+  const dur = c.entrega && c.revisao ? Math.round((c.revisao - c.entrega) / DIA_MS) : 7 * 12 - 3;
+  const rev = new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + dur);
+  $("cnForm").innerHTML = `<div class="card form" style="margin-top:8px"><h3>Ciclo novo</h3>
+    <p class="sub">O app cria uma planilha nova na pasta de ${esc(primeiro(a.nome))}, com o mesmo treino e as anotações vazias. A planilha atual vira "ANTIGO … (ciclo até …)" e continua guardada. O app do aluno passa a abrir a planilha nova. Faça depois que o aluno anotar a última semana do ciclo atual.</p>
+    <label>Começa em (segunda)<input class="busca" type="date" id="cnIni" value="${isoDe(ini)}"></label>
+    <label>Revisão<input class="busca" type="date" id="cnRev" value="${isoDe(rev)}"></label>
+    <p class="sub" id="cnMsg"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="cnOk">Criar o ciclo novo</button></div></div>`;
+  const conf = () => { const d = isoData($("cnIni").value); $("cnMsg").textContent = d && d.getDay() !== 1 ? "O ciclo começa numa segunda-feira." : d && d < h ? "Atenção: essa data já passou." : ""; };
+  $("cnIni").onchange = () => { const d = isoData($("cnIni").value); if (d){ $("cnRev").value = isoDe(new Date(d.getFullYear(), d.getMonth(), d.getDate() + dur)); } conf(); };
+  conf();
+  $("cnOk").onclick = async () => {
+    const i = isoData($("cnIni").value), r = isoData($("cnRev").value);
+    if (!i || i.getDay() !== 1){ $("cnMsg").textContent = "Escolha uma segunda-feira para começar."; return; }
+    if (!r || r <= i){ $("cnMsg").textContent = "A revisão tem de ser depois do começo."; return; }
+    if (!confirm(`Criar o ciclo novo de ${a.nome}, de ${ddaaaa(i)} até a revisão em ${ddaaaa(r)}?`)) return;
+    if (prescEnviando) return; prescEnviando = true; $("cnOk").disabled = true; $("cnMsg").textContent = "Criando a planilha nova (uns 20 segundos)…";
+    try {
+      const j = await chamar({acao: "t_ciclo_novo", aluno: a.chave, inicio: $("cnIni").value, revisao: $("cnRev").value}, 90000);
+      delete DADOS[a.chave]; try { localStorage.removeItem("t_aluno:" + a.chave); } catch(e){}
+      PRESC_CICLO = false;
+      $("cnForm").innerHTML = `<div class="card ok-card" style="margin-top:8px"><h3>Ciclo novo criado ✓</h3><p class="sub">A planilha antiga ficou como "${esc(j.antigo)}". ${j.app ? "O app do aluno já abre a planilha nova." : "Este aluno não tem linha na planilha de acessos do app."} Mude o que precisar no Treino e, para pôr as datas na agenda, me diga no chat: "mudei o treino de ${esc(primeiro(a.nome))}".</p><div class="acoes"><a class="btn" href="${esc(j.url)}" target="_blank" rel="noopener">Abrir a planilha nova</a></div></div>`;
+      atualizar();
+    } catch(e){ $("cnOk").disabled = false; $("cnMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi criado. Tente de novo quando a internet voltar."; }
+    finally { prescEnviando = false; }
+  };
+}
+
 // ---------- abrir ----------
 let lendo = false;
 async function atualizar(){
@@ -1313,7 +1411,7 @@ async function atualizar(){
       $("tentar") && ($("tentar").onclick = atualizar);
   } finally { lendo = false; }
 }
-$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "fin") lerFin(); if (r.tela === "leads") lerLeads(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a) carregarAluno(a, () => r.aba === "evolucao" ? evolucaoAluno(a) : registrarAluno(a)); } };
+$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "fin") lerFin(); if (r.tela === "leads") lerLeads(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a) carregarAluno(a, () => r.aba === "evolucao" ? evolucaoAluno(a) : r.aba === "treino" ? prescricaoAluno(a) : registrarAluno(a)); } };
 window.addEventListener("online", () => { tentativas = 0; enviar(); });
 window.addEventListener("offline", () => mostrarStatus(Object.keys(FILA).length ? "offline" : "velho"));
 document.addEventListener("visibilitychange", () => {
