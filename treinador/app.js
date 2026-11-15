@@ -514,6 +514,8 @@ function ligarDicas(raiz){
 }
 function evolucaoAluno(a){
   const d = DADOS[a.chave], r = a.resumo || {}, c = ciclo(a); let h = "";
+  const temAv = d.avaliacao && !d.avaliacaoAntiga;
+  if (d.reg || temAv) h += `<div class="acoes">${d.reg ? `<button class="btn amarelo" type="button" id="pdfTreino">📄 PDF da evolução do treino</button>` : ""}${temAv ? `<button class="btn" type="button" id="pdfAvEvo">📄 PDF da avaliação física</button>` : ""}</div>`;
   if (d.reg){
     const exs = evolucaoPorExercicio(d.reg);
     h += volumeHtml(a, d, c);
@@ -534,6 +536,7 @@ function evolucaoAluno(a){
   } else if (a.protocolo) h += `<div class="card"><p class="vazio">Este Protocolo é do modelo antigo (sem abas Registro). As cargas ficam no Controle de carga.</p></div>`;
   h += avaliacaoHtml(d);
   $("corpo").innerHTML = h;
+  botaoPdf($("pdfTreino"), () => pdfTreino(a)); botaoPdf($("pdfAvEvo"), () => pdfAvaliacao(a));
   ligarVolume(a, d);
   const sel = $("exSel");
   if (sel){
@@ -1430,11 +1433,12 @@ function avaliacaoAluno(a){
 
 // ----- fotos de avaliação (pasta "Avaliações <Nome>"; nome "<Ângulo> AAAA-MM-DD", como a recepcionista renomeia) -----
 const FOTO_ANGULOS = ["Frente", "Lado direito", "Lado esquerdo", "Costas", "Outras"];
-const FOTOS = {}, FOTOS_LIDAS = {}, FOTOS_ERRO = {}, FOTO_SEL = {}, IMG = {};
+const FOTOS = {}, FOTOS_LIDAS = {}, FOTOS_ERRO = {}, FOTO_SEL = {}, IMG = {}, PDFS_AV = {};
 async function lerFotosAluno(a, deNovo){
   if (!FOTOS[a.chave]) FOTOS[a.chave] = ler("t_fotos:" + a.chave);
   FOTOS_LIDAS[a.chave] = true; delete FOTOS_ERRO[a.chave];
-  try { const j = await chamar({acao: "t_fotos", aluno: a.chave, ler_de_novo: !!deNovo}, 60000); FOTOS[a.chave] = j.fotos || []; guardar("t_fotos:" + a.chave, FOTOS[a.chave]); }
+  try { const j = await chamar({acao: "t_fotos", aluno: a.chave, ler_de_novo: !!deNovo}, 60000); FOTOS[a.chave] = j.fotos || []; guardar("t_fotos:" + a.chave, FOTOS[a.chave]);
+    if (j.pdfs){ PDFS_AV[a.chave] = j.pdfs; guardar("t_pdfs:" + a.chave, j.pdfs); } }
   catch(e){ FOTOS_LIDAS[a.chave] = false; FOTOS_ERRO[a.chave] = e.servidor ? e.message : "Sem internet: não consegui procurar as fotos."; }
   const r = rota(); if (r.tela === "a" && r.chave === a.chave && r.aba === "avaliacao") pintarFotos(a);
 }
@@ -1467,9 +1471,18 @@ function pintarFotos(a){
       return `<figure>${f ? `<button type="button" class="foto" data-foto="${esc(f.id)}" data-leg="${esc(`${ang} · ${rotData(dt)}`)}" aria-label="Ampliar ${esc(ang)} de ${rotData(dt)}"><img alt="${esc(ang)} em ${rotData(dt)}" hidden><span class="foto-msg">Abrindo…</span></button>` : `<div class="foto vazia"><span class="foto-msg">Sem foto</span></div>`}<figcaption>${rotData(dt)}</figcaption></figure>`; }).join("")}</div></div>`;
   });
   const pasta = (lista.find(f => f.pasta) || {}).pasta;
-  h += `<p class="sub">Toque numa foto para ver grande. A comparação com análise e o PDF continuam comigo no chat: "compara as fotos de ${esc(primeiro(a.nome))}".</p>
-    <div class="acoes">${pasta ? `<a class="btn" href="${esc(pasta)}" target="_blank" rel="noopener">Abrir a pasta</a>` : ""}<button class="btn" type="button" id="fotosDeNovo">Procurar fotos novas</button></div></div></section>`;
+  h += `<p class="sub">Toque numa foto para ver grande. O PDF das fotos sai com as datas escolhidas acima.</p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="pdfFotos">📄 PDF das fotos${mostrar.length > 1 ? " (antes e depois)" : ""}</button>${pasta ? `<a class="btn" href="${esc(pasta)}" target="_blank" rel="noopener">Abrir a pasta</a>` : ""}<button class="btn" type="button" id="fotosDeNovo">Procurar fotos novas</button></div></div></section>`;
+  // análise das fotos: os PDFs aprovados que estão na pasta "Avaliações <Nome>" (skill treinador, 9.9; servidor versão 14)
+  if (!PDFS_AV[a.chave]) PDFS_AV[a.chave] = ler("t_pdfs:" + a.chave);
+  const pdfs = PDFS_AV[a.chave];
+  h += `<section class="secao"><header><h2>Análise das fotos</h2>${pdfs && pdfs.length ? `<span class="cont">${plural(pdfs.length, "PDF", "PDFs")}</span>` : ""}</header><div class="card">`;
+  if (pdfs && pdfs.length) h += `<div class="lista">${pdfs.map(p => `<a class="btn pdf-link" href="${esc(p.url)}" target="_blank" rel="noopener">📄 ${esc(p.nome)}</a>`).join("")}</div>
+    <p class="sub">Abre no Drive, onde dá para baixar e mandar ao aluno.</p>`;
+  else h += `<p class="sub">${pdfs ? `Nenhum PDF de análise na pasta "Avaliações ${esc(a.nome)}" ainda.` : `Para ver aqui os PDFs de análise que estão na pasta do aluno, cole o código novo do servidor (página Ligar o app do treinador, versão 14) e toque em ↻.`}</p>`;
+  h += `<p class="sub">A análise é feita comigo no chat: "compara as fotos de ${esc(primeiro(a.nome))}". Depois de aprovada, salve o PDF em "Avaliações ${esc(a.nome)}" e ele aparece aqui.</p></div></section>`;
   el.innerHTML = h;
+  botaoPdf($("pdfFotos"), () => pdfFotos(a));
   const escolher = () => { FOTO_SEL[a.chave] = [$("fAntes").value, $("fDepois").value]; pintarFotos(a); };
   if ($("fAntes")){ $("fAntes").onchange = escolher; $("fDepois").onchange = escolher; }
   $("fotosDeNovo").onclick = () => { $("fotosDeNovo").disabled = true; lerFotosAluno(a, true); };
@@ -1519,16 +1532,18 @@ function avColunas(d){ return [0,1,2,3,4,5].filter(i => avData(d, i)); }
 function pintarAv(a){
   const el = $("avSec"); if (!el) return;
   const d = DADOS[a.chave] || {};
-  if (!a.avaliacao){ el.innerHTML = `<section class="secao"><header><h2>Avaliação física</h2></header><div class="card"><p class="sub">${a.modalidade === "presencial" ? `Este aluno ainda não tem a planilha "Avaliação ${esc(a.nome)}". Me peça no chat para criar.` : "Só os alunos do presencial têm a planilha de avaliação física (dobras e medidas)."}</p></div></section>`; return; }
+  // consultoria sem a planilha de avaliação: a aba mostra só as fotos (pedido do criador, 15/11/2026)
+  if (!a.avaliacao){ el.innerHTML = a.modalidade === "presencial" ? `<section class="secao"><header><h2>Avaliação física</h2></header><div class="card"><p class="sub">Este aluno ainda não tem a planilha "Avaliação ${esc(a.nome)}". Me peça no chat para criar.</p></div></section>` : ""; return; }
   let h = avaliacaoHtml(d);
+  if (d.avaliacao && !d.avaliacaoAntiga && avColunas(d).length) h += `<div class="acoes"><button class="btn amarelo" type="button" id="pdfAv">📄 PDF da avaliação física</button></div>`;
   if (d.avaliacaoAntiga){ el.innerHTML = h; return; }
-  if (!d.avaliacaoCampos){ el.innerHTML = h + `<div class="card"><p class="sub">${d.avaliacao ? AVISO_V11 : "Abrindo a planilha de avaliação…"}</p></div>`; return; }
+  if (!d.avaliacaoCampos){ el.innerHTML = h + `<div class="card"><p class="sub">${d.avaliacao ? AVISO_V11 : "Abrindo a planilha de avaliação…"}</p></div>`; botaoPdf($("pdfAv"), () => pdfAvaliacao(a)); return; }
   const feitas = avColunas(d), livre = [0,1,2,3,4,5].find(i => !avData(d, i));
   h += `<div class="card"><h3>Anotar pelo app</h3><div class="acoes">${livre != null ? `<button class="btn${AV_ED === livre ? " amarelo" : ""}" type="button" id="avNova">${AV_ED === livre ? "Cancelar" : "+ Nova avaliação"}</button>` : ""}
     ${feitas.map(i => `<button class="btn${AV_ED === i ? " amarelo" : ""}" type="button" data-avcol="${i}">${AV_ED === i ? "Cancelar" : "Editar " + esc(avData(d, i).slice(0, 5))}</button>`).join("")}</div>
     ${livre == null ? `<p class="sub">As 6 avaliações da planilha estão preenchidas. Para a próxima, me peça no chat uma planilha nova.</p>` : ""}<div id="avForm"></div></div>`;
   el.innerHTML = h;
-  ligarDicas(el);
+  ligarDicas(el); botaoPdf($("pdfAv"), () => pdfAvaliacao(a));
   if ($("avNova")) $("avNova").onclick = () => { AV_ED = AV_ED === livre ? null : livre; pintarAv(a); };
   el.querySelectorAll("[data-avcol]").forEach(b => b.onclick = () => { const i = Number(b.dataset.avcol); AV_ED = AV_ED === i ? null : i; pintarAv(a); });
   if (AV_ED != null) formAvaliacao(a, d, AV_ED, !avData(d, AV_ED));

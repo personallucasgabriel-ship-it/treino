@@ -1,10 +1,10 @@
 // Guarda a tela do app do treinador no celular para abrir sem internet (os dados ficam no app.js, localStorage).
 // Mudou algum arquivo? O publicar-site.sh troca a VERSAO sozinho.
-const VERSAO = "treinador-202611150233";
-const ARQUIVOS = ["./", "index.html", "app.js", "manifest.webmanifest",
+const VERSAO = "treinador-202611150258";
+const ARQUIVOS = ["./", "index.html", "app.js", "pdf.js", "jspdf.umd.min.js", "manifest.webmanifest",
   "../icons/logo-horizontal.svg", "../icons/icon-192.png", "../icons/icon-512.png", "../icons/icon-maskable-512.png", "../icons/apple-touch-icon.png", "../icons/favicon-32.png",
   "../fonts/archivo.woff2", "../fonts/inter.woff2", "../fonts/jetbrainsmono.woff2"];
-const PRIMEIRO_REDE = /\/treinador\/(index\.html|app\.js|manifest\.webmanifest)?$/;
+const PRIMEIRO_REDE = /\/treinador\/(index\.html|app\.js|pdf\.js|manifest\.webmanifest)?$/;
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSAO).then(c => c.addAll(ARQUIVOS)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith("treinador-") && k !== VERSAO).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
