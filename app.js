@@ -140,6 +140,7 @@ function montarDados(raw){
   P.ini = data(P.inicio); P.fim = data(P.revisao, P.ini || undefined);
   P.fotosEm = raw.fotos_em ? new Date(raw.fotos_em + "T12:00:00") : null;
   P.versao = Number(raw.versao) || 0;
+  P.plano = raw.plano || null; P.dieta = !!raw.dieta;   // servidor versão 15: aviso de renovação e sugestão alimentar
   P.abas = abasDaSemana();
   P.reg = {}; Object.keys(raw.reg||{}).forEach(L => { P.reg[L] = (raw.reg[L]||[]).map(r => r.slice()); });
   P.cardio = {}; (raw.cardio||[]).forEach(r => { const s = Number(r[0]), d = txt(r[1]); if (s && d) P.cardio[s+"|"+d] = {minutos: lerPlanilha(r[4]), bpm: lerPlanilha(r[5]), recado: txt(r[6])}; });
@@ -408,9 +409,11 @@ function avisos(){
       h += card("Hoje é dia de descanso", p ? `Próximo treino: ${NOMES[p.dia].toLowerCase()}${p.treino ? `, Treino ${p.treino}` : ", cardio"}.` : "Seu próximo treino é na semana que vem.", "ok"); }
     else if (diaFeito(i)) h += card("Treino de hoje feito ✓", "Tudo anotado. Bom descanso!", "ok");
   }
-  h += cardFotos(hoje, wHoje) + cardFimCiclo(hoje);
+  h += cardRenovar(hoje) + cardFotos(hoje, wHoje) + cardFimCiclo(hoje);
   h += cardInstalar();
   box.innerHTML = h;
+  const nr = $("naoRenovar"); if (nr) nr.onclick = () => { guardar("renovar-depois:" + CODIGO, Date.now()); avisos(); };
+  checarConquistas();
   const bi = $("instalar"); if (bi) bi.onclick = instalarAndroid;
   const bn = $("naoInstalar"); if (bn) bn.onclick = () => { guardar("instalar-depois", Date.now()); avisos(); };
 }
@@ -489,6 +492,7 @@ function render(){
   if (d.exercicios.length) h += `<button class="grande" type="button" id="story"><svg class="ig" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.2" fill="currentColor"/></svg> Compartilhar no story</button>`;
   h += `<button class="grande sec" type="button" id="enviar">Ver registro da semana</button>`;
   h += `<button class="grande sec" type="button" id="verEvo">📈 Minha evolução</button>`;
+  if (P.dieta) h += `<button class="grande sec" type="button" id="verDieta">🍽️ Sugestão alimentar</button>`;
   h += blocoAgenda();
   tela.innerHTML = h; contagem();
   ligarAgenda();
@@ -513,6 +517,7 @@ function render(){
   tela.querySelectorAll("[data-recado]").forEach(b => b.onclick = () => { const k = b.dataset.recado, box = $(`rc-${n}-${k}`); box.hidden = !box.hidden; if (!box.hidden) $(`m-${n}-${k}`).focus(); });
   $("enviar").onclick = mostrarRegistro;
   $("verEvo").onclick = mostrarEvolucao;
+  if ($("verDieta")) $("verDieta").onclick = mostrarDieta;
 }
 
 function digitou(inp){
@@ -761,11 +766,11 @@ const ANGULOS = ["Frente", "Lado direito", "Lado esquerdo", "Costas"];
 const isoD = s => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? new Date(+m[1], +m[2]-1, +m[3]) : null; };
 function grafico(pontos, titulo, un){
   if (pontos.length < 2) return "";
-  const W = 320, H = 140, pe = 40, pd = 12, pt = 12, pb = 22, ys = pontos.map(p => p.y);
+  const W = 320, H = 140, pe = 46, pd = 12, pt = 12, pb = 22, ys = pontos.map(p => p.y);
   const folga = (Math.max(...ys) - Math.min(...ys)) * .2 || 1, lo = Math.min(...ys) - folga, hi = Math.max(...ys) + folga;
   const X = i => pe + i * (W - pe - pd) / (pontos.length - 1), Y = v => pt + (H - pt - pb) * (1 - (v - lo) / (hi - lo));
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}">`;
-  [lo, (lo + hi) / 2, hi].forEach(t => { s += `<line x1="${pe}" x2="${W - pd}" y1="${Y(t)}" y2="${Y(t)}" stroke="#2A2A27"/><text x="${pe - 6}" y="${Y(t) + 4}" text-anchor="end" fill="#8C8A80" font-size="10" font-family="JetBrains Mono, monospace">${fmt(hi - lo < 2 ? t : Math.round(t * 10) / 10)}</text>`; });
+  [lo, (lo + hi) / 2, hi].forEach(t => { s += `<line x1="${pe}" x2="${W - pd}" y1="${Y(t)}" y2="${Y(t)}" stroke="#2A2A27"/><text x="${pe - 6}" y="${Y(t) + 4}" text-anchor="end" fill="#8C8A80" font-size="10" font-family="JetBrains Mono, monospace">${hi - lo >= 10 ? Math.round(t).toLocaleString("pt-BR") : fmt(hi - lo < 2 ? t : Math.round(t * 10) / 10)}</text>`; });
   pontos.forEach((p, i) => { s += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle" fill="#8C8A80" font-size="10" font-family="Inter, sans-serif">${esc(p.x)}</text>`; });
   s += `<polyline fill="none" stroke="#FFD60A" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="${pontos.map((p, i) => `${X(i)},${Y(p.y)}`).join(" ")}"/>`;
   pontos.forEach((p, i) => { s += `<circle cx="${X(i)}" cy="${Y(p.y)}" r="4" fill="#FFD60A" stroke="#161616" stroke-width="2"/>`; });
@@ -811,8 +816,8 @@ function fotosEvo(e){
   return h + `<p class="nota">Só você e o seu treinador veem estas fotos.</p>`;
 }
 function pintarEvo(erro){
-  const c = $("evoCorpo"); let h = "";
-  if (!EVO) h = `<p class="carregando">${esc(erro || "Abrindo a sua evolução…")}</p>`;
+  const c = $("evoCorpo"); let h = cargasEvo();
+  if (!EVO) h += `<p class="carregando">${esc(erro || "Procurando as suas fotos…")}</p>`;
   else {
     if (EVO.modalidade === "presencial") h += EVO.avaliacao ? avaliacaoEvo(EVO) : `<h3>Avaliação física</h3><p class="nota">A sua avaliação física aparece aqui quando estiver no modelo novo da planilha. Fale com o seu treinador.</p>`;
     h += fotosEvo(EVO);
@@ -820,6 +825,7 @@ function pintarEvo(erro){
   }
   c.innerHTML = h;
   const escolher = () => { EVO_SEL = [$("evoA").value, $("evoB").value]; pintarEvo(); };
+  if ($("evoEx")) $("evoEx").onchange = e => { EVO_EX = e.target.value; guardar("evo-ex:" + CODIGO, EVO_EX); pintarEvo(); };
   if ($("evoA")){ $("evoA").onchange = escolher; $("evoB").onchange = escolher; }
   c.querySelectorAll("[data-foto]").forEach(bt => { const img = bt.querySelector("img"), sp = bt.querySelector("span");
     carregarFoto(bt.dataset.foto).then(url => { img.src = url; img.hidden = false; sp.remove(); bt.onclick = () => abrirFoto(url, bt.dataset.leg); })
@@ -858,6 +864,143 @@ function abrirFoto(url, leg){
   f.onclick = fechar; document.addEventListener("keydown", tecla); document.body.appendChild(f); f.querySelector("button").focus();
 }
 $("fecharEvo").onclick = () => { $("evolucao").hidden = true; };
+
+// ---------- versão 15 (15/11/2026; pedido do criador): suas cargas, conquistas, sugestão alimentar e renovação ----------
+let EVO_EX = ler("evo-ex:" + CODIGO);
+const totalSemanas = () => P.ini && P.fim ? Math.max(1, Math.min(12, Math.ceil((P.fim - P.ini) / (7*864e5)))) : 12;
+const semanaHoje = () => P.ini ? Math.max(1, semanaDe(hojeZero())) : 1;
+// treinos previstos e feitos numa semana (feito = alguma série anotada naquele dia)
+function treinosDaSemana(w){
+  let prev = 0, feitos = 0;
+  SEMANA_JS.forEach(d => { const L = P.periodo[d]; if (!L || !(P.treinos[L]||[]).length) return; prev++;
+    const reg = P.reg[P.abas[d] || L] || [];
+    for (let k = 1; k <= 9; k++){ const row = reg[linhaReg(w,k)]; if (row) for (let s = 0; s < 5; s++) if (lerPlanilha(row[1+2*s]) > 0){ feitos++; return; } } });
+  return {prev, feitos};
+}
+// números do ciclo: melhor série de cada exercício por semana, recordes (mesma regra de recordeDe), volume, treinos e sequência
+function estatisticas(){
+  const ex = {}, antes = {}, recs = [], volSem = {}; let volume = 0;
+  for (let w = 1; w <= 12; w++){
+    const daSem = {};
+    Object.keys(P.reg).forEach(L => { for (let k = 1; k <= 9; k++){ const row = (P.reg[L]||[])[linhaReg(w,k)], nome = nomeDaLinha(row); if (!nome) continue;
+      for (let s = 0; s < 5; s++){ const r = lerPlanilha(row[1+2*s]), q = lerPlanilha(row[2+2*s]); if (!(r > 0)) continue; const kgv = q === "" ? 0 : q;
+        (daSem[nome] || (daSem[nome] = [])).push({reps: r, kg: kgv}); volume += r * kgv; volSem[w] = (volSem[w] || 0) + r * kgv; } } });
+    Object.keys(daSem).forEach(n => { const lst = daSem[n], e = ex[n] || (ex[n] = {nome: n, semanas: {}});
+      e.semanas[w] = lst.reduce((b,x) => x.kg > b.kg || (x.kg === b.kg && x.reps > b.reps) ? x : b);
+      const r = recordeDe(lst, antes[n] || []); if (r) recs.push({semana: w, exercicio: n, texto: textoRecorde(r)});
+      antes[n] = (antes[n] || []).concat(lst); });
+  }
+  const total = totalSemanas(), wa = semanaHoje(), sem = [];
+  for (let w = 1; w <= total; w++) sem.push({semana: w, ...treinosDaSemana(w)});
+  // sequência: semanas completas seguidas (a semana em andamento só conta quando completa; não quebra a sequência)
+  let corrente = 0, melhorSeq = 0;
+  sem.forEach(x => { if (x.semana > wa) return; if (x.prev && x.feitos >= x.prev){ corrente++; melhorSeq = Math.max(melhorSeq, corrente); } else if (x.semana < wa) corrente = 0; });
+  return {ex: Object.values(ex).sort((a,b) => a.nome.localeCompare(b.nome, "pt-BR")), recs, volume, volSem, sem, total,
+    treinos: sem.reduce((t,x) => t + x.feitos, 0), seq: corrente, melhorSeq};
+}
+// conquistas: [id, ícone, nome, valor atual, meta]
+function conquistas(e){
+  return [
+    ["tr1", "👟", "Primeiro treino anotado", e.treinos, 1],
+    ["sem1", "✅", "Semana completa", e.melhorSeq, 1],
+    ["seq4", "🔥", "4 semanas seguidas sem faltar", e.melhorSeq, 4],
+    ["seq8", "🔥", "8 semanas seguidas sem faltar", e.melhorSeq, 8],
+    ["ciclo", "👑", "Ciclo inteiro sem faltar", e.melhorSeq, e.total],
+    ["rec1", "🏆", "Primeiro recorde", e.recs.length, 1],
+    ["rec10", "🏆", "10 recordes", e.recs.length, 10],
+    ["rec25", "🏆", "25 recordes", e.recs.length, 25],
+    ["tr25", "💪", "25 treinos", e.treinos, 25],
+    ["tr50", "💪", "50 treinos", e.treinos, 50],
+    ["t10", "🏋️", "10 toneladas levantadas", Math.floor(e.volume / 1000), 10],
+    ["t50", "🏋️", "50 toneladas levantadas", Math.floor(e.volume / 1000), 50],
+    ["t100", "🏋️", "100 toneladas levantadas", Math.floor(e.volume / 1000), 100]
+  ].map(([id, ic, nome, val, meta]) => ({id, ic, nome, val, meta, ok: val >= meta}));
+}
+// conquista nova: um aviso na hora (a 1ª vez que o app abre só guarda as que já tinha)
+function checarConquistas(){
+  if (!P || !P.reg) return;
+  const k = "conq:" + CODIGO, tinha = ler(k), agora = conquistas(estatisticas()).filter(c => c.ok);
+  if (tinha){ const nova = agora.find(c => !tinha.includes(c.id)); if (nova) aviso(`${nova.ic} Nova conquista: ${nova.nome}!`); }
+  if (!tinha || agora.some(c => !tinha.includes(c.id))) guardar(k, agora.map(c => c.id));
+}
+const toneladas = kg => kg >= 1000 ? `${fmt(Math.round(kg / 100) / 10)} t` : `${Math.round(kg)} kg`;
+function cargasEvo(){
+  if (!P || !P.reg) return "";
+  const e = estatisticas(), cq = conquistas(e), feitas = cq.filter(c => c.ok);
+  let h = `<h3>Suas conquistas</h3><div class="evo-cards">
+    <div class="evo-card"><small>Treinos feitos</small><b>${e.treinos}</b><span>neste ciclo</span></div>
+    <div class="evo-card"><small>Sequência</small><b>${e.seq} ${e.seq === 1 ? "semana" : "semanas"}</b><span>${e.melhorSeq > e.seq ? `melhor: ${e.melhorSeq}` : "completas seguidas"}</span></div>
+    <div class="evo-card"><small>Recordes</small><b>${e.recs.length}</b><span>neste ciclo</span></div>
+    <div class="evo-card"><small>Total levantado</small><b>${toneladas(e.volume)}</b><span>reps × kg</span></div></div>`;
+  h += `<p class="nota">${feitas.length} de ${cq.length} conquistas</p><div class="conq">${cq.map(c => `<div class="conq-i${c.ok ? " ok" : ""}"><span aria-hidden="true">${c.ic}</span><div><b>${esc(c.nome)}</b><small>${c.ok ? "Conquistada" : `${Math.min(c.val, c.meta)} de ${c.meta}`}</small></div></div>`).join("")}</div>`;
+  if (!e.ex.length) return h + `<h3>Suas cargas</h3><p class="nota">Assim que você anotar as primeiras séries, a evolução de cada exercício aparece aqui.</p>`;
+  const sel = e.ex.find(x => x.nome === EVO_EX) || e.ex[0], ws = Object.keys(sel.semanas).map(Number).sort((a,b) => a - b);
+  const p0 = sel.semanas[ws[0]], u = sel.semanas[ws[ws.length - 1]], dif = Math.round((u.kg - p0.kg) * 10) / 10;
+  h += `<h3>Suas cargas</h3><label class="evo-sel1">Exercício<select id="evoEx">${e.ex.map(x => `<option${x === sel ? " selected" : ""}>${esc(x.nome)}</option>`).join("")}</select></label>`;
+  h += ws.length > 1 ? grafico(ws.map(w => ({x: "S" + w, y: sel.semanas[w].kg})), `${sel.nome}: melhor série (kg)`, " kg")
+      + `<p class="nota">Semana ${ws[0]}: ${fmt(p0.kg)} kg × ${p0.reps} → semana ${ws[ws.length - 1]}: ${fmt(u.kg)} kg × ${u.reps}${dif > 0 ? ` (+${fmt(dif)} kg)` : ""}.</p>`
+    : `<p class="nota">Semana ${ws[0]}: ${fmt(p0.kg)} kg × ${p0.reps}. Na próxima semana, você vê aqui o quanto subiu.</p>`;
+  const vs = Object.keys(e.volSem).map(Number).sort((a,b) => a - b);
+  if (vs.length > 1) h += grafico(vs.map(w => ({x: "S" + w, y: Math.round(e.volSem[w])})), "Volume total por semana (reps × kg)", " kg");
+  if (e.recs.length) h += `<h4>Seus recordes</h4><ul class="evo-recs">${e.recs.slice().reverse().slice(0, 8).map(r => `<li><b>${esc(r.exercicio)}</b> · semana ${r.semana}<br><small>${esc(r.texto)}</small></li>`).join("")}</ul>`;
+  return h;
+}
+
+// ----- sugestão alimentar (aba Cardápio do Calculos metabólicos; só aparece com o "sim" do treinador e sem nutricionista) -----
+const K_DIETA = "dieta:" + CODIGO;
+let DIETA = ler(K_DIETA), dietaLendo = false;
+const PLURAL = {"unidade": "unidades", "fatia": "fatias", "colher de sopa": "colheres de sopa", "colher de chá": "colheres de chá", "pote": "potes",
+  "scoop": "scoops", "copo": "copos", "xícara": "xícaras", "lata": "latas", "porção": "porções"};   // igual ao dieta_pdf.py (skill nutricionista)
+function qtdDieta(q, m){ q = txt(q); m = txt(m); if (!q) return ""; if (m === "g" || m === "ml") return `${q} ${m}`;
+  const n = lerPlanilha(q); return `${q} ${n !== "" && n >= 2 ? (PLURAL[m] || m) : m}`.trim(); }
+function pintarDieta(erro){
+  const c = $("dietaCorpo"), j = DIETA; let h = "";
+  if (!j) h = `<p class="carregando">${esc(erro || "Abrindo a sua sugestão alimentar…")}</p>`;
+  else if (!j.dieta) h = `<p class="nota">${esc(j.motivo || "A sua sugestão alimentar ainda não está pronta.")}</p>`;
+  else {
+    const d = j.dieta, m = d.cardapio || {};
+    const metas = [["Calorias", m.kcal, "kcal"], ["Proteína", m.proteina, "g"], ["Carboidrato", m.carboidrato, "g"], ["Gordura", m.gordura, "g"]].filter(x => txt(x[1]));
+    if (metas.length) h += `<h3>Seu dia</h3><div class="evo-cards">${metas.map(([n, v, un]) => `<div class="evo-card"><small>${n}</small><b>${esc(v)} ${un}</b></div>`).join("")}</div>${txt((d.meta || {}).agua) ? `<p class="nota">Água: ${esc(d.meta.agua)} por dia.</p>` : ""}`;
+    d.refeicoes.forEach(r => { h += `<div class="refeicao"><h4>${esc(r.nome)}</h4><ul>${r.itens.map(i => `<li><span>${esc(i.alimento)}</span><b>${esc(qtdDieta(i.quantidade, i.medida))}</b>${i.obs ? `<small>${esc(i.obs)}</small>` : ""}</li>`).join("")}</ul></div>`; });
+    if (d.suplementos.length) h += `<h3>Suplementação</h3><ul class="evo-recs">${d.suplementos.map(x => `<li><b>${esc(x.nome)}</b>${x.dose ? ` · ${esc(x.dose)}` : ""}${x.uso ? `<br><small>${esc(x.uso)}</small>` : ""}</li>`).join("")}</ul>`;
+    if (d.trocas.length){ const por = {}; d.trocas.forEach(t => { (por[t.de] || (por[t.de] = {qtd: qtdDieta(t.qtd_de, t.med_de), itens: []})).itens.push(`${qtdDieta(t.qtd_para, t.med_para)} de ${t.para}`); });
+      h += `<h3>Trocas</h3><ul class="evo-recs">${Object.keys(por).map(k => `<li><b>${esc(por[k].qtd)} de ${esc(k)}</b> pode trocar por:<br><small>${por[k].itens.map(esc).join(" · ")}</small></li>`).join("")}</ul>`; }
+    if (d.observacoes.length) h += `<h3>Observações</h3>${d.observacoes.map(o => `<p class="nota">${esc(o)}</p>`).join("")}`;
+    h += `<p class="nota">É uma sugestão com as suas metas. Dúvida ou quer trocar algo? Fale com o seu treinador.</p>`;
+    if (erro) h += `<p class="nota">${esc(erro)}</p>`;
+  }
+  c.innerHTML = h;
+}
+async function mostrarDieta(){
+  $("dieta").hidden = false; pintarDieta(); $("dieta").scrollIntoView({behavior: "smooth"});
+  if (dietaLendo) return; dietaLendo = true;
+  try { const j = await chamar({acao: "dieta", codigo: CODIGO}, 60000); DIETA = j; guardar(K_DIETA, j); pintarDieta(); }
+  catch(e){ pintarDieta(e.servidor ? e.message : "Sem internet: mostrando o que já estava guardado no celular."); }
+  finally { dietaLendo = false; }
+}
+$("fecharDieta").onclick = () => { $("dieta").hidden = true; };
+
+// ----- renovação: perto do fim do plano (aba Alunos do Financeiro; só consultoria online) -----
+// Preços e links: ferramentas/vendas/precos-e-oferta.md. Mudou lá, mude aqui.
+const PLANOS_RENOVAR = [
+  ["Mensal", "R$ 197", "https://sun.eduzz.com/39YDQYZQ9O"],
+  ["Trimestral", "R$ 497 ou 3x de R$ 165,67", "https://sun.eduzz.com/2212855"],
+  ["Semestral", "R$ 897 ou 6x de R$ 149,50", "https://sun.eduzz.com/E0D6NXGY91"]];
+const WHATS_TREINADOR = "5544998093639";
+function cardRenovar(hoje){
+  const p = P.plano; if (!p || !p.fim || /sa[ií]u/i.test(p.situacao || "")) return "";
+  const fim = isoD(p.fim); if (!fim) return "";
+  const n = Math.round((fim - hoje) / 864e5);
+  if (n < -7 || !(n <= 14 || /Perguntar se renova|Plano acabou/i.test(p.situacao || ""))) return "";
+  const depois = ler("renovar-depois:" + CODIGO); if (depois && Date.now() - depois < 3*864e5 && n > 0) return "";
+  const nomePlano = p.plano ? ` ${p.plano.toLowerCase()}` : "";
+  const tit = n > 1 ? `Seu plano${nomePlano} acaba em ${n} dias` : n === 1 ? `Seu plano${nomePlano} acaba amanhã` : n === 0 ? `Seu plano${nomePlano} acaba hoje` : `Seu plano${nomePlano} acabou`;
+  const txtp = n >= 0 ? `Ele vai até ${NOMES[SEMANA_JS[fim.getDay()]].toLowerCase()}, ${dd(fim)}. Para seguir sem pausa no treino, você pode renovar por aqui.` : `Ele terminou em ${dd(fim)}. Para voltar ao treino, é só renovar por aqui.`;
+  const zap = `https://wa.me/${WHATS_TREINADOR}?text=${encodeURIComponent(`Oi, Lucas! Quero renovar a consultoria no Pix.`)}`;
+  return `<div class="aviso-card"><h3>${esc(tit)}</h3><p>${esc(txtp)}</p>
+    <details class="como"><summary>Renovar no cartão</summary><div class="planos">${PLANOS_RENOVAR.map(([nome, preco, link]) => `<a class="btn${nome === "Trimestral" ? " amarelo" : ""}" href="${link}" target="_blank" rel="noopener"><b>${nome}</b> ${esc(preco)}</a>`).join("")}</div></details>
+    <div class="acoes"><a class="btn" href="${zap}" target="_blank" rel="noopener">Pagar no Pix (falar com o Lucas)</a>${n > 0 ? `<button class="btn" type="button" id="naoRenovar">Depois</button>` : ""}</div></div>`;
+}
 
 // ---------- abrir ----------
 function erroTela(titulo, texto, botao){

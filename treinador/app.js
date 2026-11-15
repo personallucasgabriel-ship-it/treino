@@ -366,11 +366,25 @@ function resumoAluno(a){
   if (rec.length) h += `<section class="secao"><header><h2>Recordes</h2><span class="cont">últimas 4 semanas</span></header><div class="card">${rec.slice().reverse().map(x =>
       `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>🏆 ${esc(x.texto || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
   if (a.lido_planilha_erro) h += `<p class="sub">${esc(a.lido_planilha_erro)}</p>`;
+  // sugestão alimentar no app do aluno (servidor versão 15; pedido do criador): só com o ok do treinador e sem nutricionista
+  if (a.app && (INICIO.versao || 0) >= 15){
+    const tem = a.nutri === "Sim";
+    h += `<section class="secao"><header><h2>Sugestão alimentar no app</h2><span class="cont">${a.dieta_app ? "aparece no app" : "não aparece"}</span></header><div class="card">
+      <p class="sub">${tem ? "Na anamnese, este aluno disse que faz acompanhamento com nutricionista: a sugestão alimentar não vai para o app dele."
+        : a.dieta_app ? `O cardápio da aba Cardápio aparece no app de ${esc(primeiro(a.nome))}, no botão "Sugestão alimentar". Mudou o cardápio? Ele vê o novo em até 30 minutos.`
+        : `Para o aluno que quis a sugestão alimentar e não tem nutricionista. Antes, monte e aprove o cardápio comigo no chat ("monta a dieta de ${esc(primeiro(a.nome))}").${a.nutri ? "" : " A anamnese não diz se ele tem nutricionista: confira antes."}`}</p>
+      <p class="sub" id="dietaMsg"></p>${tem ? "" : `<div class="acoes"><button class="btn${a.dieta_app ? "" : " amarelo"}" type="button" id="dietaApp">${a.dieta_app ? "Tirar do app do aluno" : "Mostrar no app do aluno"}</button></div>`}</div></section>`;
+  }
   h += `<section class="secao" id="inatSecao"><header><h2>Aluno parou?</h2></header><div class="card">
     <p class="sub">Leva a pasta para Inativos, o contrato para Contratos Inativos e desliga o app do aluno. Nada é apagado: se ele voltar, me diga no chat "${esc(primeiro(a.nome))} voltou".</p>
     <p class="sub" id="inatMsg"></p><div class="acoes"><button class="btn" type="button" id="inativar">Inativar aluno</button></div></div></section>`;
   $("corpo").innerHTML = h;
   $("inativar").onclick = () => inativarAluno(a);
+  if ($("dietaApp")) $("dietaApp").onclick = async () => {
+    const ligar = !a.dieta_app, b = $("dietaApp"); b.disabled = true; $("dietaMsg").textContent = ligar ? "Conferindo o cardápio…" : "Tirando…";
+    try { await chamar({acao: "t_dieta_app", aluno: a.chave, ligar}, 60000); a.dieta_app = ligar; guardar("t_inicio", INICIO); resumoAluno(a); }
+    catch(e){ b.disabled = false; $("dietaMsg").textContent = e.servidor ? e.message : "Sem internet: tente de novo com sinal."; }
+  };
   $("salvarAnot").onclick = async () => {
     const t = $("anot").value; $("anotMsg").textContent = "Salvando…";
     try { await chamar({acao: "t_nota", aluno: a.chave, nome: a.nome, texto: t}); a.anotacao = t; guardar("t_inicio", INICIO); $("anotMsg").textContent = "Salvo ✓"; }
