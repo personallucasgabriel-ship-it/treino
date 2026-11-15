@@ -1505,19 +1505,11 @@ function pintarFotos(a){
   });
 }
 // textos prontos para "Sua análise" (pedido do criador, 15/11/2026), escritos pelas regras de
-// .claude/skills/treinador/diretrizes.md (seções 4.3, 4.6, 4.7, 4.8 e 5.1): mudou o texto lá, mude aqui.
+// .claude/skills/treinador/diretrizes.md (seções 4.7, 4.8 e 5.1); o criador escolheu só estes 3 (15/11/2026): mudou o texto lá, mude aqui.
 // Linha que começa com "## " vira subtítulo no PDF. {antes} e {depois} viram as datas escolhidas.
 const TEXTOS_PRONTOS = [
   ["Como comparamos", "## Como as fotos foram comparadas\nComparamos as fotos de {antes} e de {depois}, nos mesmos ângulos (frente, lados e costas), com o corpo do mesmo tamanho e na mesma posição nas duas fotos."],
   ["Postura: se policiar", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. Ao longo do dia, vale se policiar: ombros relaxados, peito aberto e a barriga levemente firme quando estiver em pé ou sentado. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
-  ["Postura: celular", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. Ao longo do dia, vale se policiar com a cabeça: traga o celular para a altura dos olhos, em vez de descer a cabeça até ele, e deixe a tela do computador na altura do olhar. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
-  ["Postura: ombros", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. Ao longo do dia, vale se policiar com os ombros: deixe-os relaxados, longe das orelhas, e o peito aberto, principalmente quando estiver sentado ou no celular. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
-  ["Postura: manter", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. A sua postura está bem cuidada: continue com esses cuidados que estão funcionando. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
-  ["Lados diferentes", "Pequenas diferenças entre o lado direito e o esquerdo são comuns em quase todo mundo. O objetivo é melhorar, não ficar perfeito."],
-  ["Cabeça à frente", "Notamos uma anteriorização da cabeça, ou seja, a cabeça fica um pouco à frente da linha dos ombros. Isso é muito comum em quem passa bastante tempo no celular ou no computador, e responde bem ao treino."],
-  ["Ombros à frente", "Notamos uma protrusão de ombros, ou seja, os ombros ficam levemente projetados para frente. É muito comum, costuma estar ligado aos hábitos do dia a dia, e o treino ajuda a melhorar."],
-  ["Joelhos para trás", "Notamos uma hiperextensão de joelhos, ou seja, os joelhos ficam bem estendidos para trás quando você está em pé. É comum, e fortalecer glúteos e posteriores ajuda a melhorar."],
-  ["Gordura localizada", "Não existe perda de gordura localizada só treinando uma região: a gordura diminui no corpo todo, com o treino de força e a alimentação."],
   ["Sobre esta análise", "## Sobre esta análise\nÉ uma análise visual, feita a partir das fotos. Ela depende de fotos tiradas sempre do mesmo jeito (mesmo lugar, mesma luz e mesmo horário) e complementa as medidas e o acompanhamento, sem substituí-los."]
 ];
 // a foto (miniatura de 1200 px) fica guardada no celular depois da 1ª vez: abre rápido e sem internet
