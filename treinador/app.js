@@ -1345,6 +1345,7 @@ function cartaoInstagram(){
     if (!igAberto) h += `<div class="acoes"><button class="btn amarelo" type="button" id="igTrocar">Colar a chave</button></div>`;
   }
   if (igAberto) h += `<div class="form"><label>Chave do Instagram (o código comprido que a Meta mostrou)<textarea class="busca" id="igChave" rows="3" autocomplete="off" spellcheck="false"></textarea></label>
+    <label>Número da conta (o número azul embaixo do seu @ na Meta; opcional)<input class="busca" id="igConta" inputmode="numeric" maxlength="25" autocomplete="off"></label>
     <p class="sub">A chave vai direto para o servidor do seu app e fica guardada só lá. Não mande essa chave no chat.</p>
     <div class="acoes"><button class="btn amarelo" type="button" id="igOk">Ligar</button></div></div>`;
   h += `<p class="sub" id="igMsg"></p></div>`;
@@ -1358,8 +1359,8 @@ function ligarInstagram(){
     catch(e){ $("igMsg").textContent = e.servidor ? (/desconhecida/i.test(e.message) ? "O servidor ainda é a versão antiga: cole o código novo (versão 18)." : e.message) : "Sem internet: tente de novo quando a internet voltar."; }
     finally { igEnviando = false; }
   };
-  if ($("igOk")) $("igOk").onclick = () => { const t = ($("igChave").value || "").replace(/\s+/g, ""); if (t.length < 50){ $("igMsg").textContent = "Cole o código inteiro (ele é bem comprido)."; return; }
-    enviar({acao: "t_ig_chave", token: t}, "Conferindo com o Instagram…", f => ({texto: `Instagram ligado${f.usuario ? ` (@${f.usuario})` : ""}. Amanhã às 7h sai a primeira leitura; para ver já, toque em Ler agora.`})); };
+  if ($("igOk")) $("igOk").onclick = () => { const t = ($("igChave").value || "").replace(/\s+/g, ""); if (t.length < 50){ $("igMsg").textContent = /^\d+$/.test(t) ? "Esse é o número da conta: ele vai no campo de baixo. Em cima vai o código comprido do Gerar token." : "Cole o código inteiro (ele é bem comprido)."; return; }
+    enviar({acao: "t_ig_chave", token: t, conta: ($("igConta").value || "").replace(/\D/g, "")}, "Conferindo com o Instagram…", f => ({texto: `Instagram ligado${f.usuario ? ` (@${f.usuario})` : ""}. Amanhã às 7h sai a primeira leitura; para ver já, toque em Ler agora.`})); };
   if ($("igAgora")) $("igAgora").onclick = () => enviar({acao: "t_ig_agora"}, "Lendo o Instagram… (pode levar 1 minuto)", f => ({texto: f.ig === "lido" ? `Li o Instagram: ${plural(f.interacoes || 0, "ação nova", "ações novas")}, ${plural(f.leads_novos || 0, "sugestão de lead nova", "sugestões de lead novas")}.${f.erro ? ` Aviso: ${f.erro}` : ""}` : "O Instagram não está ligado."}));
   if ($("igDesl")) $("igDesl").onclick = () => { if (confirm("Desligar o Instagram automático? A chave sai do servidor e a leitura das 7h para. O que já foi anotado continua.")) enviar({acao: "t_ig_desligar"}, "Desligando…", () => ({texto: "Instagram automático desligado."})); };
 }
