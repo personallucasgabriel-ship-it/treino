@@ -299,7 +299,7 @@ function telaAluno(chave, aba){
   const a = alunoPorChave(chave);
   if (!a){ $("tela").innerHTML = `<a class="voltar" href="#/alunos">‹ Alunos</a><div class="card"><h2>Aluno não encontrado</h2><p class="sub">Ele pode ter ido para Inativos. Toque em ↻ para ler o Drive de novo.</p></div>`; return; }
   const [nivel, frase] = situacao(a);
-  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []).concat(temProto && a.modelo === "novo" && (INICIO.versao || 0) >= PRESC_DESDE ? [["treino","Treino"]] : []);
+  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []).concat(temProto && a.modelo === "novo" && (INICIO.versao || 0) >= PRESC_DESDE ? [["treino","Treino"]] : []).concat([["avaliacao","Avaliação"]]);
   if (!abas.some(x => x[0] === aba)) aba = "resumo";
   let h = `<a class="voltar" href="#/alunos">‹ Alunos</a>
     <div><div class="eyebrow">${a.modalidade === "presencial" ? "Presencial" : "Consultoria online"}</div><h1>${esc(a.nome)}</h1></div>
@@ -309,8 +309,9 @@ function telaAluno(chave, aba){
     <div id="corpo" class="wrap" style="width:100%"></div>`;
   $("tela").innerHTML = h;
   if (aba === "resumo") resumoAluno(a);
-  else carregarAluno(a, () => aba === "evolucao" ? evolucaoAluno(a) : aba === "treino" ? prescricaoAluno(a) : registrarAluno(a));
+  else carregarAluno(a, () => abrirAba(a, aba));
 }
+function abrirAba(a, aba){ if (aba === "evolucao") evolucaoAluno(a); else if (aba === "treino") prescricaoAluno(a); else if (aba === "avaliacao") avaliacaoAluno(a); else registrarAluno(a); }
 
 // no Registrar: os outros alunos com Protocolo, primeiro os do presencial que treinam hoje
 function trocarAluno(atual){
@@ -1308,6 +1309,7 @@ function prescricaoAluno(a){
   const T = lerTreino(d.treino || []), diasDe = L => ORDEM.filter(x => T.periodo[x] === L).map(x => NOMES[x].slice(0, 3).toLowerCase());
   let h = `<div class="card"><h3>Ciclo atual</h3><p class="sub">${c.entrega ? `Começou em ${ddaaaa(c.entrega)}` : "Sem data de entrega"}${c.revisao ? ` · revisão em ${ddaaaa(c.revisao)}` : ""}${c.semana ? ` · semana ${Math.min(c.semana, c.total)} de ${c.total}` : ""}</p>
     <div class="acoes"><button class="btn${PRESC_CICLO ? " amarelo" : ""}" type="button" id="cnAbrir">Começar o ciclo novo a partir deste</button></div><div id="cnForm"></div></div>`;
+  h += v11() ? cicloResumoHtml(a, d) : `<p class="sub">Faixas de repetição, periodização e cardio continuam na planilha. ${AVISO_V11}</p>`;
   ["A","B","C","D","E"].forEach(L => {
     const slots = (p.treinos || {})[L] || [], usados = slots.filter(s => s.nome), vago = slots.find(s => !s.nome), dias = diasDe(L);
     if (!usados.length && !dias.length) return;
@@ -1319,10 +1321,12 @@ function prescricaoAluno(a){
       h += aberto ? `<div class="lead aberto"><div id="exEd"></div></div>` : `<div><button class="btn" type="button" data-ed="${id}">+ Adicionar exercício</button></div>`; }
     h += `</div></section>`;
   });
-  h += `<p class="sub">Faixas de repetição, periodização e cardio continuam na planilha.${a.planilha ? ` <a href="${esc(a.planilha)}" target="_blank" rel="noopener">Abrir a planilha</a>` : ""}</p>`;
+  if (a.planilha) h += `<p class="sub"><a href="${esc(a.planilha)}" target="_blank" rel="noopener">Abrir a planilha</a></p>`;
   $("corpo").innerHTML = h;
-  document.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => { PRESC_ED = PRESC_ED === b.dataset.ed ? "" : b.dataset.ed; PRESC_CICLO = false; prescricaoAluno(a); });
-  $("cnAbrir").onclick = () => { PRESC_CICLO = !PRESC_CICLO; PRESC_ED = ""; prescricaoAluno(a); };
+  document.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => { PRESC_ED = PRESC_ED === b.dataset.ed ? "" : b.dataset.ed; PRESC_CICLO = false; PLANO_ED = false; prescricaoAluno(a); });
+  $("cnAbrir").onclick = () => { PRESC_CICLO = !PRESC_CICLO; PRESC_ED = ""; PLANO_ED = false; prescricaoAluno(a); };
+  if ($("plAbrir")) $("plAbrir").onclick = () => { PLANO_ED = !PLANO_ED; PRESC_ED = ""; PRESC_CICLO = false; prescricaoAluno(a); if (PLANO_ED) $("plForm").scrollIntoView({behavior: "smooth", block: "start"}); };
+  if (PLANO_ED) formPlano(a, d);
   if (PRESC_ED && $("exEd")) editarExercicio(a, d, p);
   if (PRESC_CICLO) formCiclo(a, c);
 }
@@ -1389,6 +1393,254 @@ function formCiclo(a, c){
   };
 }
 
+// ---------- versão 11: aba Avaliação (fotos + avaliação física) e o ciclo (faixas, dias e cardio) na aba Treino ----------
+const V11_DESDE = 11;
+const v11 = () => ((INICIO && INICIO.versao) || 0) >= V11_DESDE;
+const AVISO_V11 = `Para isto, cole o código novo do servidor (página Ligar o app do treinador, versão 11) e toque em ↻.`;
+const isoDePlanilha = s => { const d = dataPlanilha(s); return d ? isoDe(d) : ""; };
+
+function avaliacaoAluno(a){
+  // presencial com a planilha de avaliação: a avaliação física primeiro (é o que se anota na hora); o resto, as fotos primeiro
+  const caixa = id => `<div id="${id}" class="wrap" style="width:100%"></div>`;
+  $("corpo").innerHTML = a.avaliacao ? caixa("avSec") + caixa("fotosSec") : caixa("fotosSec") + caixa("avSec");
+  pintarFotos(a); pintarAv(a);
+  if (v11() && !FOTOS_LIDAS[a.chave]) lerFotosAluno(a);
+}
+
+// ----- fotos de avaliação (pasta "Avaliações <Nome>"; nome "<Ângulo> AAAA-MM-DD", como a recepcionista renomeia) -----
+const FOTO_ANGULOS = ["Frente", "Lado direito", "Lado esquerdo", "Costas", "Outras"];
+const FOTOS = {}, FOTOS_LIDAS = {}, FOTOS_ERRO = {}, FOTO_SEL = {}, IMG = {};
+async function lerFotosAluno(a, deNovo){
+  if (!FOTOS[a.chave]) FOTOS[a.chave] = ler("t_fotos:" + a.chave);
+  FOTOS_LIDAS[a.chave] = true; delete FOTOS_ERRO[a.chave];
+  try { const j = await chamar({acao: "t_fotos", aluno: a.chave, ler_de_novo: !!deNovo}, 60000); FOTOS[a.chave] = j.fotos || []; guardar("t_fotos:" + a.chave, FOTOS[a.chave]); }
+  catch(e){ FOTOS_LIDAS[a.chave] = false; FOTOS_ERRO[a.chave] = e.servidor ? e.message : "Sem internet: não consegui procurar as fotos."; }
+  const r = rota(); if (r.tela === "a" && r.chave === a.chave && r.aba === "avaliacao") pintarFotos(a);
+}
+function pintarFotos(a){
+  const el = $("fotosSec"); if (!el) return;
+  if (!FOTOS[a.chave]) FOTOS[a.chave] = ler("t_fotos:" + a.chave);
+  const lista = FOTOS[a.chave];
+  let h = `<section class="secao"><header><h2>Fotos de avaliação</h2><span class="cont" id="fotosCont"></span></header>`;
+  if (!v11()){ el.innerHTML = h + `<div class="card"><p class="sub">${AVISO_V11}</p></div></section>`; return; }
+  if (!lista){ el.innerHTML = h + `<div class="card"><p class="${FOTOS_ERRO[a.chave] ? "sub" : "carregando"}">${esc(FOTOS_ERRO[a.chave] || "Procurando as fotos na pasta de avaliações…")}</p>${FOTOS_ERRO[a.chave] ? `<div class="acoes"><button class="btn" type="button" id="fotosDeNovo">Tentar de novo</button></div>` : ""}</div></section>`;
+    if ($("fotosDeNovo")) $("fotosDeNovo").onclick = () => { delete FOTOS_ERRO[a.chave]; pintarFotos(a); lerFotosAluno(a, true); };
+    return; }
+  if (!lista.length){ el.innerHTML = h + `<div class="card"><p class="vazio">Nenhuma foto na pasta "Avaliações ${esc(a.nome)}". As fotos chegam pelo formulário Fotos de avaliação e a recepção leva para a pasta do aluno.</p>
+    <div class="acoes"><button class="btn" type="button" id="fotosDeNovo">Procurar de novo</button></div></div></section>`;
+    $("fotosDeNovo").onclick = () => { FOTOS[a.chave] = null; pintarFotos(a); lerFotosAluno(a, true); }; return; }
+  const datas = [...new Set(lista.map(f => f.data))].sort();
+  let [antes, depois] = FOTO_SEL[a.chave] || [datas[0], datas[datas.length - 1]];
+  if (!datas.includes(antes)) antes = datas[0];
+  if (!datas.includes(depois)) depois = datas[datas.length - 1];
+  const mostrar = antes === depois ? [antes] : [antes, depois];
+  const rotData = s => ddaaaa(isoData(s));
+  h = h.replace(`<span class="cont" id="fotosCont"></span>`, `<span class="cont">${plural(datas.length, "data", "datas")}</span>`);
+  h += `<div class="card">`;
+  if (datas.length > 1) h += `<div class="av-grid"><label class="sub">Antes<select id="fAntes">${opcoes(datas.map(x => [x, rotData(x)]), antes)}</select></label><label class="sub">Depois<select id="fDepois">${opcoes(datas.map(x => [x, rotData(x)]), depois)}</select></label></div>`;
+  else h += `<p class="sub">Só uma data até agora (${rotData(datas[0])}). A comparação aparece quando chegarem as fotos da reavaliação.</p>`;
+  const de = (ang, dt) => lista.filter(f => f.angulo === ang && f.data === dt);
+  FOTO_ANGULOS.forEach(ang => {
+    if (!mostrar.some(dt => de(ang, dt).length)) return;
+    h += `<div class="foto-ang"><h3>${ang}</h3><div class="par${mostrar.length === 1 ? " um" : ""}">${mostrar.map(dt => { const f = de(ang, dt)[0];
+      return `<figure>${f ? `<button type="button" class="foto" data-foto="${esc(f.id)}" data-leg="${esc(`${ang} · ${rotData(dt)}`)}" aria-label="Ampliar ${esc(ang)} de ${rotData(dt)}"><img alt="${esc(ang)} em ${rotData(dt)}" hidden><span class="foto-msg">Abrindo…</span></button>` : `<div class="foto vazia"><span class="foto-msg">Sem foto</span></div>`}<figcaption>${rotData(dt)}</figcaption></figure>`; }).join("")}</div></div>`;
+  });
+  const pasta = (lista.find(f => f.pasta) || {}).pasta;
+  h += `<p class="sub">Toque numa foto para ver grande. A comparação com análise e o PDF continuam comigo no chat: "compara as fotos de ${esc(primeiro(a.nome))}".</p>
+    <div class="acoes">${pasta ? `<a class="btn" href="${esc(pasta)}" target="_blank" rel="noopener">Abrir a pasta</a>` : ""}<button class="btn" type="button" id="fotosDeNovo">Procurar fotos novas</button></div></div></section>`;
+  el.innerHTML = h;
+  const escolher = () => { FOTO_SEL[a.chave] = [$("fAntes").value, $("fDepois").value]; pintarFotos(a); };
+  if ($("fAntes")){ $("fAntes").onchange = escolher; $("fDepois").onchange = escolher; }
+  $("fotosDeNovo").onclick = () => { $("fotosDeNovo").disabled = true; lerFotosAluno(a, true); };
+  el.querySelectorAll("[data-foto]").forEach(b => {
+    const img = b.querySelector("img"), msg = b.querySelector(".foto-msg");
+    carregarFoto(a, b.dataset.foto).then(url => { img.src = url; img.hidden = false; msg.remove(); b.onclick = () => abrirFoto(url, b.dataset.leg); })
+      .catch(e => { msg.textContent = e.servidor ? "Não abriu" : "Sem internet"; b.onclick = () => pintarFotos(a); });
+  });
+}
+// a foto (miniatura de 1200 px) fica guardada no celular depois da 1ª vez: abre rápido e sem internet
+const FILA_FOTOS = []; let fotosBaixando = 0;
+function carregarFoto(a, id){
+  if (IMG[id]) return IMG[id];
+  const chaveCache = new URL(`__foto/${encodeURIComponent(id)}`, location.href).href;
+  const p = (async () => {
+    try { if (window.caches){ const c = await caches.open("t-fotos"), r = await c.match(chaveCache); if (r) return URL.createObjectURL(await r.blob()); } } catch(e){}
+    await new Promise(ok => { FILA_FOTOS.push(ok); andarFila(); });
+    try {
+      const j = await chamar({acao: "t_foto", aluno: a.chave, id}, 60000);
+      const bin = atob(j.b64), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], {type: j.tipo || "image/jpeg"});
+      try { if (window.caches){ const c = await caches.open("t-fotos"); await c.put(chaveCache, new Response(blob, {headers: {"Content-Type": blob.type}})); } } catch(e){}
+      return URL.createObjectURL(blob);
+    } finally { fotosBaixando--; andarFila(); }
+  })();
+  IMG[id] = p; p.catch(() => { delete IMG[id]; });
+  return p;
+}
+function andarFila(){ while (fotosBaixando < 2 && FILA_FOTOS.length){ fotosBaixando++; FILA_FOTOS.shift()(); } }
+function abrirFoto(url, legenda){
+  const f = document.createElement("div"); f.className = "foto-cheia"; f.setAttribute("role", "dialog"); f.setAttribute("aria-label", legenda);
+  f.innerHTML = `<button type="button" class="pse-x" aria-label="Fechar">✕</button><img src="${esc(url)}" alt="${esc(legenda)}"><p>${esc(legenda)}</p>`;
+  const fechar = () => { f.remove(); document.removeEventListener("keydown", tecla); };
+  const tecla = e => { if (e.key === "Escape") fechar(); };
+  f.onclick = fechar; document.addEventListener("keydown", tecla);
+  document.body.appendChild(f); f.querySelector("button").focus();
+}
+
+// ----- avaliação física (aba Avaliações da planilha "Avaliação <Nome>"; servidor: avSalvar_) -----
+let AV_ED = null, avEnviando = false;   // AV_ED = índice da coluna (0 = avaliação 1, coluna D) que está aberta para editar
+function avCel(d, linha, col){ return txt(((d.avaliacao || [])[linha - (d.avaliacaoIni || 10)] || [])[2 + col]); }
+function avColunas(d){ return [0,1,2,3,4,5].filter(i => avCel(d, 10, i)); }
+function pintarAv(a){
+  const el = $("avSec"); if (!el) return;
+  const d = DADOS[a.chave] || {};
+  if (!a.avaliacao){ el.innerHTML = `<section class="secao"><header><h2>Avaliação física</h2></header><div class="card"><p class="sub">${a.modalidade === "presencial" ? `Este aluno ainda não tem a planilha "Avaliação ${esc(a.nome)}". Me peça no chat para criar.` : "Só os alunos do presencial têm a planilha de avaliação física (dobras e medidas)."}</p></div></section>`; return; }
+  let h = avaliacaoHtml(d);
+  if (d.avaliacaoAntiga){ el.innerHTML = h; return; }
+  if (!d.avaliacaoCampos){ el.innerHTML = h + `<div class="card"><p class="sub">${d.avaliacao ? AVISO_V11 : "Abrindo a planilha de avaliação…"}</p></div>`; return; }
+  const feitas = avColunas(d), livre = [0,1,2,3,4,5].find(i => !avCel(d, 10, i));
+  h += `<div class="card"><h3>Anotar pelo app</h3><div class="acoes">${livre != null ? `<button class="btn${AV_ED === livre ? " amarelo" : ""}" type="button" id="avNova">${AV_ED === livre ? "Cancelar" : "+ Nova avaliação"}</button>` : ""}
+    ${feitas.map(i => `<button class="btn${AV_ED === i ? " amarelo" : ""}" type="button" data-avcol="${i}">${AV_ED === i ? "Cancelar" : "Editar " + esc(avCel(d, 10, i).slice(0, 5))}</button>`).join("")}</div>
+    ${livre == null ? `<p class="sub">As 6 avaliações da planilha estão preenchidas. Para a próxima, me peça no chat uma planilha nova.</p>` : ""}<div id="avForm"></div></div>`;
+  el.innerHTML = h;
+  ligarDicas(el);
+  if ($("avNova")) $("avNova").onclick = () => { AV_ED = AV_ED === livre ? null : livre; pintarAv(a); };
+  el.querySelectorAll("[data-avcol]").forEach(b => b.onclick = () => { const i = Number(b.dataset.avcol); AV_ED = AV_ED === i ? null : i; pintarAv(a); });
+  if (AV_ED != null) formAvaliacao(a, d, AV_ED, !avCel(d, 10, AV_ED));
+}
+function formAvaliacao(a, d, col, nova){
+  const campos = d.avaliacaoCampos, perfil = d.avaliacaoPerfil || [], feitas = avColunas(d).filter(i => i !== col);
+  const ultima = feitas.length ? feitas[feitas.length - 1] : null;
+  // valor de cada campo: o da coluna; na avaliação nova, a altura e o % desejado vêm da última avaliação
+  const orig = {}, ini = {};
+  campos.forEach(([L, , un]) => { const v = avCel(d, L, col); orig[L] = un === "data" ? isoDePlanilha(v) : v;
+    ini[L] = orig[L] || (nova && un === "data" ? isoDe(hojeZero()) : nova && (L === 13 || L === 46) && ultima != null ? avCel(d, L, ultima) : orig[L]); });
+  const pOrig = {}; perfil.forEach(([L, , op]) => { const v = avCel(d, L, 0); pOrig[L] = op === "data" ? isoDePlanilha(v) : v; });
+  const semSexo = !pOrig[5];
+  const campoHtml = ([L, rot, un]) => un === "data"
+    ? `<label>Data da avaliação<input class="busca" type="date" data-av="${L}" value="${esc(ini[L])}"></label>`
+    : `<label>${esc(rot)} (${un})<input class="busca" inputmode="decimal" autocomplete="off" data-av="${L}" value="${esc(ini[L])}"></label>`;
+  const grupo = g => campos.filter(c => c[3] === g);
+  const preenchidos = g => grupo(g).filter(c => ini[c[0]]).length;
+  const perfilHtml = `<div class="av-grid">${perfil.map(([L, rot, op]) => op === "data"
+    ? `<label>${esc(rot)}<input class="busca" type="date" data-perfil="${L}" value="${esc(pOrig[L])}"></label>`
+    : `<label>${esc(L === 5 ? "Sexo" : L === 7 ? "É atleta?" : "Etnia negra? (Evans)")}<select data-perfil="${L}">${L === 5 ? `<option value="">Escolha</option>` : ""}${opcoes(op.map(x => [x, x === "F" ? "Mulher" : x === "M" ? "Homem" : x]), pOrig[L])}</select></label>`).join("")}</div>`;
+  let h = `<div class="card form" style="margin-top:4px"><h3>${nova ? `Avaliação ${col + 1} (nova)` : `Avaliação ${col + 1}`}</h3>`;
+  h += semSexo ? `<p class="sub">Escolha o sexo: sem ele, a planilha não calcula o % de gordura.</p>${perfilHtml}` : `<details><summary>Perfil do aluno (vale para todas)</summary>${perfilHtml}</details>`;
+  h += `<div class="av-grid">${grupo("Dados").map(campoHtml).join("")}</div>`;
+  ["Perímetros", "Dobras cutâneas"].forEach(g => { h += `<details${nova || preenchidos(g) ? " open" : ""}><summary>${g} (${preenchidos(g)} de ${grupo(g).length})</summary><div class="av-grid">${grupo(g).map(campoHtml).join("")}</div></details>`; });
+  h += `<div class="av-grid">${grupo("Meta").map(campoHtml).join("")}</div>
+    <p class="sub">A idade, a soma das dobras, o % de gordura (protocolo automático), as massas, o peso desejado e o IMC a planilha calcula sozinha.</p>
+    <p class="sub" id="avMsg"></p><div class="acoes"><button class="btn amarelo" type="button" id="avOk">Salvar na planilha</button></div></div>`;
+  $("avForm").innerHTML = h;
+  $("avOk").onclick = async () => {
+    const v = {}, p = {}; let erro = "";
+    document.querySelectorAll("#avForm [data-av]").forEach(inp => {
+      const L = Number(inp.dataset.av), c = campos.find(x => x[0] === L), bruto = txt(inp.value);
+      if (c[2] === "data"){ if (bruto !== orig[L] || nova) v[L] = bruto; return; }
+      const n = bruto === "" ? "" : lerDigitado(bruto);
+      if (bruto !== "" && !(n > 0)) erro = erro || `Número inválido em ${c[1]}.`;
+      if (n !== "" && c[4] && n > c[4]) erro = erro || `${c[1]}: ${fmt(n)} ${c[2]} parece errado.`;
+      if (String(n) !== String(lerPlanilha(orig[L]))) v[L] = n === "" ? "" : String(n);
+    });
+    document.querySelectorAll("#avForm [data-perfil]").forEach(inp => { const L = Number(inp.dataset.perfil); if (txt(inp.value) !== pOrig[L]) p[L] = txt(inp.value); });
+    if (!txt((document.querySelector('#avForm [data-av="10"]') || {}).value)) erro = erro || "Falta a data da avaliação.";
+    if (erro){ $("avMsg").textContent = erro; return; }
+    if (!Object.keys(v).length && !Object.keys(p).length){ AV_ED = null; pintarAv(a); return; }
+    if (avEnviando) return; avEnviando = true; $("avOk").disabled = true; $("avMsg").textContent = "Salvando na planilha…";
+    try {
+      const nd = await chamar({acao: "t_av_salvar", aluno: a.chave, col, v, perfil: p}, 60000);
+      DADOS[a.chave] = nd; guardar("t_aluno:" + a.chave, nd); AV_ED = null; pintarAv(a);
+      const g = avCel(nd, 43, col), mm = avCel(nd, 45, col);
+      aviso(`Avaliação salva ✓${g ? ` · ${g}% de gordura` : ""}${mm ? ` · massa magra ${mm} kg` : ""}`);
+    } catch(e){ $("avOk").disabled = false; $("avMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi salvo. Tente de novo quando a internet voltar."; }
+    finally { avEnviando = false; }
+  };
+}
+
+// ----- o ciclo na aba Treino: faixa de reps de cada semana, periodização e cardio (servidor: planoMudar_) -----
+const FAIXAS_SUGERIDAS = ["3 a 6", "6 a 8", "8 a 12", "10 a 12", "12 a 15", "15 a 20"];
+let PLANO_ED = false, planoEnviando = false;
+function lugaresCiclo(v){
+  const cel = (r, c) => txt((v[r] || [])[c]);
+  let dia = -1, aer = -1;
+  for (let r = 0; r < v.length; r++){ if (cel(r, 0) === "DIA" && /TREINO/.test(cel(r, 1)) && dia < 0) dia = r; if (cel(r, 0) === "EXERCÍCIOS AERÓBICOS" && aer < 0) aer = r; }
+  const out = {faixas: [], dias: {}, cardio: []};
+  if (dia < 0) return null;
+  const vistas = new Set();
+  for (let r = 0; r < dia; r++) (v[r] || []).forEach((x, c) => { const m = /^Semana (\d+)$/.exec(txt(x)); if (m && !vistas.has(m[1])){ vistas.add(m[1]); out.faixas.push({n: +m[1], valor: cel(r + 1, c)}); } });
+  out.faixas.sort((x, y) => x.n - y.n);
+  for (let i = 1; i <= 7; i++){ const d = cel(dia + i, 0); if (NOMES[d]) out.dias[d] = cel(dia + i, 1); }
+  if (aer >= 0) for (let r = aer + 1; r < v.length; r++){ if (!/^Semana/i.test(cel(r, 0))) continue;
+    const ds = {}; for (let j = 1; j <= 7; j++){ const d = cel(r + j, 0); if (NOMES[d]) ds[d] = cel(r + j, 1); }
+    out.cardio.push({bloco: cel(r, 0), dias: ds}); }
+  return out;
+}
+// "30 min, manter uma média de 130 bpm (esteira)" → {min, bpm, tipo}; o texto do modelo (sem números) → vazio
+function lerCardio(t){
+  if (!cardioValido(t)) return {min: "", bpm: "", tipo: "", padrao: true};
+  const min = (/(\d+)\s*min/i.exec(t) || [])[1] || "", bpm = (/(\d+)\s*bpm/i.exec(t) || [])[1] || "";
+  // tipo: o que está entre parênteses no fim; num texto escrito de outro jeito ("Caminhada leve 20min"), o que sobra sem os números
+  let tipo = (/\(([^)]*)\)\s*$/.exec(t) || [])[1] || "";
+  if (!tipo && !/manter uma m[ée]dia/i.test(t)) tipo = t.replace(/\d+\s*min(utos)?/i, " ").replace(/\d+\s*bpm/i, " ").replace(/[(),]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  const refeito = `${min} min${bpm ? `, manter uma média de ${bpm} bpm` : ""}${tipo ? ` (${tipo})` : ""}`;
+  return {min, bpm, tipo, padrao: !!min && refeito.replace(/\s+/g, " ") === t.replace(/\s+/g, " ").trim()};
+}
+const textoCardio = c => c.min ? `${c.min} min${c.bpm ? `, ${c.bpm} bpm` : ""}${c.tipo ? ` (${c.tipo})` : ""}` : "";
+function cicloResumoHtml(a, d){
+  const L = lugaresCiclo(d.treino || []);
+  if (!L) return `<p class="sub">Não achei a periodização na aba Treino. Faixas, dias e cardio continuam na planilha.</p>`;
+  const faixas = L.faixas.filter(f => f.valor).map(f => `S${f.n} ${esc(f.valor)}`).join(" · ") || "sem faixas";
+  const ds = ORDEM.filter(x => /^[A-E]$/.test(L.dias[x] || "")).map(x => `${NOMES[x].slice(0, 3).toLowerCase()} ${L.dias[x]}`).join(" · ") || "nenhum dia de treino";
+  const cs = L.cardio.map(b => { const n = Object.values(b.dias).filter(t => cardioValido(t)).length; return n ? `${esc(b.bloco)}: ${plural(n, "dia")}` : ""; }).filter(Boolean).join(" · ") || "sem cardio";
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>Faixas, dias e cardio</h3><button class="btn${PLANO_ED ? " amarelo" : ""}" type="button" id="plAbrir">${PLANO_ED ? "Cancelar" : "Editar"}</button></div>
+    <p class="sub"><b>Faixas:</b> ${faixas}</p><p class="sub"><b>Dias:</b> ${ds}</p><p class="sub"><b>Cardio:</b> ${cs}</p><div id="plForm"></div></div>`;
+}
+function formPlano(a, d){
+  const L = lugaresCiclo(d.treino || []); if (!L || !$("plForm")) return;
+  const opDia = atual => { const base = [["", "Descanso"], ["A","A"], ["B","B"], ["C","C"], ["D","D"], ["E","E"]]; if (atual && !/^[A-E]$/.test(atual)) base.push([atual, atual]); return opcoes(base, atual); };
+  let h = `<div class="card form" style="margin-top:4px">
+    <h3>Faixa de repetições de cada semana</h3><datalist id="plFaixas">${FAIXAS_SUGERIDAS.map(f => `<option value="${f}">`).join("")}</datalist>
+    <div class="av-grid tres">${L.faixas.map(f => `<label>Semana ${f.n}<input class="busca" data-faixa="${f.n}" list="plFaixas" inputmode="text" autocomplete="off" value="${esc(f.valor)}" placeholder="8 a 12"></label>`).join("")}</div>
+    <p class="sub">Escreva como "8 a 12". 15 a 20 é a semana regenerativa (a planilha corta as séries pela metade). Semana sem faixa fica fora do ciclo.</p>
+    <h3>Dias de treino</h3><div class="av-grid tres">${ORDEM.filter(x => x in L.dias).map(x => `<label>${NOMES[x]}<select data-dia="${x}">${opDia(L.dias[x])}</select></label>`).join("")}</div>`;
+  if (L.cardio.length){
+    h += `<h3>Cardio</h3><p class="sub">Minutos e frequência cardíaca média de cada dia. Tipo é opcional (ex.: esteira, bike). Dia em branco fica sem cardio.</p>`;
+    L.cardio.forEach((b, i) => { const n = Object.values(b.dias).filter(t => cardioValido(t)).length;
+      h += `<details${n ? " open" : ""}><summary>${esc(b.bloco)} (${plural(n, "dia")})</summary><div class="cardio-dias"><span></span><small>min</small><small>bpm</small><small>tipo</small>${ORDEM.filter(x => x in b.dias).map(x => { const c = lerCardio(b.dias[x]);
+        return `<b>${NOMES[x].slice(0, 3)}</b><input class="busca" inputmode="numeric" data-cb="${i}" data-cd="${x}" data-cc="min" value="${esc(c.min)}" aria-label="${esc(b.bloco)}, ${NOMES[x]}: minutos"><input class="busca" inputmode="numeric" data-cb="${i}" data-cd="${x}" data-cc="bpm" value="${esc(c.bpm)}" aria-label="${esc(b.bloco)}, ${NOMES[x]}: bpm"><input class="busca" data-cb="${i}" data-cd="${x}" data-cc="tipo" value="${esc(c.tipo)}" maxlength="60" aria-label="${esc(b.bloco)}, ${NOMES[x]}: tipo">${!c.padrao && cardioValido(b.dias[x]) ? `<small class="cardio-dif">Na planilha está: "${esc(b.dias[x])}". Ao salvar este dia, o texto troca para o formato acima.</small>` : ""}`; }).join("")}</div></details>`; });
+  }
+  h += `<p class="sub" id="plMsg"></p><div class="acoes"><button class="btn amarelo" type="button" id="plOk">Salvar na planilha</button></div></div>`;
+  $("plForm").innerHTML = h;
+  $("plOk").onclick = async () => {
+    const m = {faixas: {}, periodo: {}, cardio: {}}; let erro = "";
+    document.querySelectorAll("[data-faixa]").forEach(inp => { const n = inp.dataset.faixa, f = L.faixas.find(x => String(x.n) === n), v = txt(inp.value).replace(/\s+/g, " ");
+      if (v && !/^\d{1,2} ?a ?\d{1,2}$/.test(v)) erro = erro || `Semana ${n}: escreva a faixa como "8 a 12".`;
+      if (v !== f.valor) m.faixas[n] = v; });
+    document.querySelectorAll("[data-dia]").forEach(s => { if (s.value !== (L.dias[s.dataset.dia] || "")) m.periodo[s.dataset.dia] = s.value; });
+    L.cardio.forEach((b, i) => Object.keys(b.dias).forEach(x => {
+      const pega = c => txt((document.querySelector(`[data-cb="${i}"][data-cd="${x}"][data-cc="${c}"]`) || {}).value);
+      const novo = {min: pega("min"), bpm: pega("bpm"), tipo: pega("tipo")}, velho = lerCardio(b.dias[x]);
+      if (novo.min && !(Number(novo.min) >= 1 && Number(novo.min) <= 300)) erro = erro || `${b.bloco}, ${NOMES[x]}: minutos de 1 a 300.`;
+      if (novo.bpm && !(Number(novo.bpm) >= 40 && Number(novo.bpm) <= 230)) erro = erro || `${b.bloco}, ${NOMES[x]}: bpm de 40 a 230.`;
+      if (!novo.min && (novo.bpm || novo.tipo)) erro = erro || `${b.bloco}, ${NOMES[x]}: falta o tempo em minutos.`;
+      if (novo.min !== velho.min || novo.bpm !== velho.bpm || novo.tipo !== velho.tipo) (m.cardio[b.bloco] = m.cardio[b.bloco] || {})[x] = novo.min ? novo : null;
+    }));
+    if (erro){ $("plMsg").textContent = erro; return; }
+    const n = Object.keys(m.faixas).length + Object.keys(m.periodo).length + Object.values(m.cardio).reduce((s, x) => s + Object.keys(x).length, 0);
+    if (!n){ PLANO_ED = false; prescricaoAluno(a); return; }
+    if (Object.keys(m.periodo).length && ((a.resumo || {}).ultima_semana || 0) > 0 &&
+      !confirm(`Mudar os dias de treino muda em qual dia o app do aluno mostra cada treino. As semanas já anotadas continuam na planilha, mas um treino repetido na semana pode passar a aparecer em outra aba. Mudar mesmo assim?`)) return;
+    if (planoEnviando) return; planoEnviando = true; $("plOk").disabled = true; $("plMsg").textContent = "Salvando na planilha…";
+    try {
+      const nd = await chamar({acao: "t_plano_mudar", aluno: a.chave, m}, 60000);
+      DADOS[a.chave] = nd; guardar("t_aluno:" + a.chave, nd); PLANO_ED = false; prescricaoAluno(a); aviso(`Ciclo atualizado ✓ (${plural(n, "mudança", "mudanças")})`);
+      atualizar();   // o resumo do aluno (dias de treino, semana) vem do t_inicio
+    } catch(e){ $("plOk").disabled = false; $("plMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi salvo. Tente de novo quando a internet voltar."; }
+    finally { planoEnviando = false; }
+  };
+}
+
 // ---------- abrir ----------
 let lendo = false;
 async function atualizar(){
@@ -1411,7 +1663,7 @@ async function atualizar(){
       $("tentar") && ($("tentar").onclick = atualizar);
   } finally { lendo = false; }
 }
-$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "fin") lerFin(); if (r.tela === "leads") lerLeads(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a) carregarAluno(a, () => r.aba === "evolucao" ? evolucaoAluno(a) : r.aba === "treino" ? prescricaoAluno(a) : registrarAluno(a)); } };
+$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "fin") lerFin(); if (r.tela === "leads") lerLeads(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a){ if (r.aba === "avaliacao" && v11()) lerFotosAluno(a, true); carregarAluno(a, () => abrirAba(a, r.aba)); } } };
 window.addEventListener("online", () => { tentativas = 0; enviar(); });
 window.addEventListener("offline", () => mostrarStatus(Object.keys(FILA).length ? "offline" : "velho"));
 document.addEventListener("visibilitychange", () => {
