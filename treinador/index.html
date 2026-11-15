@@ -215,6 +215,14 @@ nav.baixo a[aria-current="page"]{color:var(--preto);background:var(--amarelo)}
 .form .busca,.form select{font-size:16px}
 .ok-card{border-color:var(--verde)}
 .aluno .acoes{flex:0 0 auto;flex-wrap:nowrap}
+.lead{display:flex;flex-direction:column;gap:6px}
+.lead.aberto>.aluno{border-color:var(--amarelo)}
+.tab-leads{width:100%;border-collapse:collapse;font-size:13px}
+.tab-leads th{text-align:left;font-weight:600;color:var(--cinza);padding:4px 6px;border-bottom:1px solid var(--linha)}
+.tab-leads td{padding:6px;border-bottom:1px solid var(--linha);font-family:var(--f-num)}
+.tab-leads td:first-child{font-family:inherit}
+.tab-leads th:not(:first-child),.tab-leads td:not(:first-child){text-align:right}
+nav.baixo a{padding:9px 4px;font-size:13px}
 </style>
 </head>
 <body>
@@ -230,6 +238,7 @@ nav.baixo a[aria-current="page"]{color:var(--preto);background:var(--amarelo)}
 <nav class="baixo" id="nav" aria-label="Telas">
   <a href="#/hoje" data-r="hoje">Hoje</a>
   <a href="#/alunos" data-r="alunos">Alunos</a>
+  <a href="#/leads" data-r="leads">Leads</a>
   <a href="#/fin" data-r="fin">Financeiro</a>
 </nav>
 <div class="timer" id="timer" hidden role="timer" aria-live="polite">

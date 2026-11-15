@@ -153,6 +153,7 @@ function render(rolar){
   if (r.tela === "alunos") telaAlunos();
   else if (r.tela === "a") telaAluno(r.chave, r.aba);
   else if (r.tela === "fin") telaFin();
+  else if (r.tela === "leads") telaLeads();
   else telaHoje();
   if (rolar) window.scrollTo({top: 0});
 }
@@ -953,6 +954,7 @@ $("parar").onclick = () => { clearInterval(tick); tick = null; T.hidden = true; 
 // Anotar precisa de internet (não entra na fila do Registrar): se falhar, o formulário continua aberto para tentar de novo.
 const FIN_DESDE = 8;
 let FIN = ler("t_fin"), finLendo = false, finForm = "", finFeito = null, finEnviando = false;
+let finPrefill = "";   // nome vindo dos Leads (lead que fechou)
 const real = n => n == null || n === "" ? "—" : Number(n).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
 const pctTxt = n => n == null ? "—" : (n * 100).toLocaleString("pt-BR", {maximumFractionDigits: 1}) + "%";
 const isoDe = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -965,12 +967,12 @@ const finAlunoDe = nome => (FIN.alunos || []).find(a => semAc(a.aluno) === semAc
 async function lerFin(silencioso){
   if (finLendo) return; finLendo = true;
   try {
-    const j = await chamar({acao: "t_fin"}, 60000);
+    const j = await chamar({acao: "t_fin"}, 60000), primeira = !FIN;
     FIN = {resumo: j.resumo, alunos: j.alunos, abertos: j.abertos, planos: j.planos, cupons: j.cupons, categorias: j.categorias,
       formas_gasto: j.formas_gasto, origens: j.origens, planilha: j.planilha, lido_em: j.lido_em};
     guardar("t_fin", FIN);
     const foco = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-    if (rota().tela === "fin" && !finForm && !foco) telaFin();
+    if (rota().tela === "fin" && (primeira || (!finForm && !foco))) telaFin();
   } catch(e){
     if (!silencioso) aviso(e.servidor && /desconhecida/i.test(e.message) ? "O servidor ainda é a versão antiga: cole o código novo (Ligar o app do treinador)." : e.servidor ? e.message : "Sem internet: mostrando a última leitura.");
     if (rota().tela === "fin" && !FIN) telaFin(e);
@@ -1087,10 +1089,12 @@ function formPagamento(){
     conferirSeg();
   };
   $("fpInicio").value = isoDe(proximaSegunda()); conferirSeg();
+  if (finPrefill){ $("fpAluno").value = finPrefill; finPrefill = ""; }
   forma("Pix");
   ligarEscolha("fpForma", forma); ligarEscolha("fpSit");
   $("fpPlano").onchange = () => { $("fpParc").value = ""; parcelas(); };
   $("fpAluno").oninput = aluno;
+  if (txt($("fpAluno").value)) aluno();
   $("fpInicio").onchange = conferirSeg;
   $("fpX").onclick = () => { finForm = ""; telaFin(); };
   $("fpOk").onclick = async () => {
@@ -1138,6 +1142,155 @@ function formGasto(){
   };
 }
 
+// ---------- LEADS (servidor versão 9; planilha "Leads", aba Leads, skill consultor-de-vendas) ----------
+// Os números do mês seguem o painel da consultoria: contam pelo mês do 1º contato; proposta = Plano / valor preenchido; venda = Fechou.
+// Anotar precisa de internet. "Fechou" não cria nada aqui: a rotina da manhã (Comercial) cria a pasta do aluno.
+let LEADS = ler("t_leads"), leadsLendo = false, leadForm = false, leadAberto = 0, leadFeito = null, leadEnviando = false;
+const ABERTAS = ["Novo", "Conversando", "Proposta enviada", "Mês que vem"];
+const MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+function contatoLink(c){
+  const t = txt(c), arroba = /^@?([A-Za-z0-9._]{1,30})$/.exec(t), dig = t.replace(/\D/g, "");
+  if (dig.length >= 10 && dig.length <= 13 && !/[A-Za-z@]/.test(t)) return {url: `https://wa.me/${dig.length <= 11 ? "55" + dig : dig}`, rot: "WhatsApp"};
+  if (arroba && /^@/.test(t)) return {url: `https://instagram.com/${arroba[1]}`, rot: "Instagram"};
+  return null;
+}
+function lerLeadsDe(j){
+  LEADS = {leads: j.leads, origens: j.origens, interesses: j.interesses, etapas: j.etapas, motivos: j.motivos, planilha: j.planilha, lido_em: j.lido_em};
+  guardar("t_leads", LEADS);
+}
+async function lerLeads(silencioso){
+  if (leadsLendo) return; leadsLendo = true;
+  try {
+    lerLeadsDe(await chamar({acao: "t_leads"}, 60000));
+    const foco = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (rota().tela === "leads" && !leadForm && !leadAberto && !foco) telaLeads();
+  } catch(e){
+    if (!silencioso) aviso(e.servidor && /desconhecida/i.test(e.message) ? "O servidor ainda é a versão antiga: cole o código novo (Ligar o app do treinador)." : e.servidor ? e.message : "Sem internet: mostrando a última leitura.");
+    if (rota().tela === "leads" && !LEADS) telaLeads(e);
+  } finally { leadsLendo = false; }
+}
+function numerosLeads(leads, ano, mes){
+  const m = `${ano}-${String(mes + 1).padStart(2, "0")}`, l = leads.filter(x => (x.data || "").slice(0, 7) === m);
+  const vendas = l.filter(x => x.etapa === "Fechou").length;
+  return {leads: l.length, propostas: l.filter(x => txt(x.plano)).length, vendas, conv: l.length ? Math.round(vendas / l.length * 100) : 0};
+}
+const difTxt = (n, sufixo) => n === 0 ? `igual` : `<span class="${n > 0 ? "sobe" : "desce"}">${n > 0 ? "▲ +" : "▼ "}${n}${sufixo || ""}</span>`;
+
+function telaLeads(erro){
+  let h = `<div><div class="eyebrow">Consultoria e presencial</div><h1>Leads</h1></div>`;
+  if (!LEADS){
+    h += erro ? `<div class="card"><h2>Não consegui abrir os leads</h2><p class="sub">${esc(erro.servidor && /desconhecida/i.test(erro.message) ? "O servidor do app ainda é a versão antiga. Cole o código novo pela página Ligar o app do treinador (versão 9) e toque em ↻." : erro.servidor ? erro.message : "Sem internet. Na primeira vez, o app precisa de internet para ler a planilha de leads.")}</p><button class="btn amarelo" type="button" id="ldTentar">Tentar de novo</button></div>`
+      : `<p class="carregando">Lendo a planilha de leads…</p>`;
+    $("tela").innerHTML = h;
+    if ($("ldTentar")) $("ldTentar").onclick = () => { telaLeads(); lerLeads(); };
+    if (!erro) lerLeads();
+    return;
+  }
+  const leads = LEADS.leads || [], hoje = hojeZero(), ano = hoje.getFullYear(), mes = hoje.getMonth();
+  const at = numerosLeads(leads, ano, mes), ant = numerosLeads(leads, mes ? ano : ano - 1, mes ? mes - 1 : 11), nomeAnt = MESES[mes ? mes - 1 : 11];
+  if (leadFeito) h += `<div class="card ok-card"><h3>Anotado ✓</h3><p class="sub">${esc(leadFeito.texto)}</p>${leadFeito.fechou ? `<div class="acoes"><a class="btn amarelo" href="#/fin" id="ldPagar">Anotar o pagamento no Financeiro</a></div>` : ""}</div>`;
+  h += `<div class="fatos">
+    ${fatoFin(`Leads novos em ${MESES[mes]}`, at.leads, `${difTxt(at.leads - ant.leads)} sobre ${nomeAnt}`)}
+    ${fatoFin("Propostas", at.propostas, `${difTxt(at.propostas - ant.propostas)} sobre ${nomeAnt}`)}
+    ${fatoFin("Vendas", at.vendas, `${difTxt(at.vendas - ant.vendas)} sobre ${nomeAnt}`, true)}
+    ${fatoFin("Conversão (lead → venda)", at.conv + "%", `${difTxt(at.conv - ant.conv, " pontos")} sobre ${nomeAnt}`)}
+  </div>`;
+  h += `<div class="acoes"><button class="btn amarelo" type="button" id="ldNovo" aria-pressed="${leadForm}">+ Lead</button></div><div id="ldForm"></div>`;
+
+  const abertos = leads.filter(l => ABERTAS.includes(l.etapa));
+  const chamar = abertos.filter(l => l.proximo && isoData(l.proximo) <= hoje).sort((a, b) => a.proximo.localeCompare(b.proximo));
+  const semData = abertos.filter(l => !l.proximo);
+  const depois = abertos.filter(l => l.proximo && isoData(l.proximo) > hoje).sort((a, b) => a.proximo.localeCompare(b.proximo));
+  const linha = (l, frase, nivel) => { const c = contatoLink(l.contato), aberto = leadAberto === l.linha;
+    return `<div class="lead${aberto ? " aberto" : ""}"><div class="aluno"><span class="bola ${nivel}"></span><span class="meio"><h3>${esc(l.nome)}</h3><p>${esc([l.etapa || "Sem etapa", l.interesse === "Personal presencial" ? "Presencial" : l.interesse === "Consultoria online" ? "Online" : "", frase].filter(Boolean).join(" · "))}</p></span>
+      <span class="acoes">${c ? `<a class="btn" href="${esc(c.url)}" target="_blank" rel="noopener">${c.rot}</a>` : ""}<button class="btn${aberto ? " amarelo" : ""}" type="button" data-lead="${l.linha}">${aberto ? "Cancelar" : "Atualizar"}</button></span></div>
+      ${aberto ? `<div id="ldEd"></div>` : ""}</div>`; };
+  h += `<section class="secao"><header><h2>Chamar hoje</h2><span class="cont">${plural(chamar.length, "lead")}</span></header>`;
+  h += chamar.length ? `<div class="lista">${chamar.map(l => { const n = dias(isoData(l.proximo), hoje); return linha(l, n ? `atrasado ${plural(n, "dia")} (era ${ddIso(l.proximo)})` : "hoje", n ? "atencao" : "aviso"); }).join("")}</div>` : `<p class="vazio">Ninguém para chamar hoje.</p>`;
+  h += `</section>`;
+  if (semData.length) h += `<section class="secao"><header><h2>Sem data de contato</h2><span class="cont">ponha uma data</span></header><div class="lista">${semData.map(l => linha(l, `desde ${ddIso(l.data)}`, "aviso")).join("")}</div></section>`;
+  if (depois.length) h += `<section class="secao"><header><h2>Próximos contatos</h2><span class="cont">${plural(depois.length, "lead")}</span></header><div class="lista">${depois.map(l => linha(l, `chamar em ${ddIso(l.proximo)}`, "ok")).join("")}</div></section>`;
+
+  // de onde vêm (este ano), como no painel
+  const anoTxt = String(ano), porOrigem = {};
+  leads.filter(l => (l.data || "").startsWith(anoTxt)).forEach(l => { const o = l.origem || "Sem origem"; const g = porOrigem[o] = porOrigem[o] || {leads: 0, vendas: 0}; g.leads++; if (l.etapa === "Fechou") g.vendas++; });
+  const orig = Object.entries(porOrigem).sort((a, b) => b[1].vendas - a[1].vendas || b[1].leads - a[1].leads);
+  if (orig.length) h += `<section class="secao"><header><h2>De onde vêm</h2><span class="cont">${anoTxt}</span></header><div class="card"><table class="tab-leads"><thead><tr><th>Origem</th><th>Leads</th><th>Vendas</th><th>Conversão</th></tr></thead><tbody>${orig.map(([o, g]) => `<tr><td>${esc(o)}</td><td>${g.leads}</td><td>${g.vendas}</td><td>${Math.round(g.vendas / g.leads * 100)}%</td></tr>`).join("")}</tbody></table></div></section>`;
+  const quando = LEADS.lido_em ? new Date(LEADS.lido_em) : null;
+  h += `<p class="sub">${quando ? `Lido da planilha às ${String(quando.getHours()).padStart(2,"0")}:${String(quando.getMinutes()).padStart(2,"0")} de ${dd(quando)}. ` : ""}A agenda ("Leads: chamar") é atualizada pela rotina da manhã. <a href="${esc(LEADS.planilha || "#")}" target="_blank" rel="noopener">Abrir a planilha</a></p>`;
+  $("tela").innerHTML = h;
+
+  $("ldNovo").onclick = () => { leadForm = !leadForm; leadAberto = 0; leadFeito = null; telaLeads(); };
+  if ($("ldPagar")) $("ldPagar").onclick = () => { finForm = "pag"; finPrefill = leadFeito.nome; leadFeito = null; };
+  document.querySelectorAll("[data-lead]").forEach(b => b.onclick = () => { const n = Number(b.dataset.lead); leadAberto = leadAberto === n ? 0 : n; leadForm = false; leadFeito = null; telaLeads(); });
+  if (leadForm) formLead();
+  if (leadAberto) editarLead((LEADS.leads || []).find(l => l.linha === leadAberto));
+  if (!quando || Date.now() - quando > 5 * 60e3) lerLeads(true);
+}
+
+function datasRapidas(id){ return `<div class="filtros" role="group" id="${id}R">${[["1", "Amanhã"], ["3", "Em 3 dias"], ["7", "Em 1 semana"], ["0", "Sem data"]].map(([v, t]) => `<button type="button" data-d="${v}">${t}</button>`).join("")}</div>`; }
+function ligarDatas(id){ document.querySelectorAll(`#${id}R button`).forEach(b => b.onclick = () => { const n = Number(b.dataset.d), h = hojeZero(); $(id).value = n ? isoDe(new Date(h.getFullYear(), h.getMonth(), h.getDate() + n)) : ""; }); }
+
+function formLead(){
+  $("ldForm").innerHTML = `<div class="card form"><h2>Lead novo</h2>
+    <label>Nome<input class="busca" id="lnNome" maxlength="120" autocomplete="off"></label>
+    <label>@ do Instagram ou WhatsApp<input class="busca" id="lnContato" maxlength="120" autocomplete="off" placeholder="@fulana ou 44999999999"></label>
+    <div><span class="rot">De onde veio</span>${escolha("lnOrigem", (LEADS.origens || []).map(o => [o, o]), "DM")}</div>
+    <div><span class="rot">Interesse</span>${escolha("lnInt", [["Consultoria online", "Consultoria online"], ["Personal presencial", "Presencial"]], "Consultoria online")}</div>
+    <div><span class="rot">Etapa</span>${escolha("lnEtapa", [["Novo", "Novo"], ["Conversando", "Conversando"], ["Proposta enviada", "Proposta enviada"]], "Conversando")}</div>
+    <label>Próximo contato<input class="busca" type="date" id="lnProx"></label>${datasRapidas("lnProx")}
+    <label>Observação (opcional)<input class="busca" id="lnObs" maxlength="500"></label>
+    <p class="sub" id="lnMsg"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="lnOk">Anotar na planilha</button><button class="btn" type="button" id="lnX">Cancelar</button></div></div>`;
+  const h = hojeZero(); $("lnProx").value = isoDe(new Date(h.getFullYear(), h.getMonth(), h.getDate() + 1));
+  ["lnOrigem", "lnInt", "lnEtapa"].forEach(id => ligarEscolha(id)); ligarDatas("lnProx");
+  $("lnX").onclick = () => { leadForm = false; telaLeads(); };
+  $("lnOk").onclick = async () => {
+    const l = {nome: txt($("lnNome").value), contato: txt($("lnContato").value), origem: valorDe("lnOrigem"), interesse: valorDe("lnInt"), etapa: valorDe("lnEtapa"),
+      proximo: $("lnProx").value, data: isoDe(hojeZero()), obs: txt($("lnObs").value)};
+    if (!l.nome){ $("lnMsg").textContent = "Escreva o nome do lead."; return; }
+    if (leadEnviando) return; leadEnviando = true; $("lnOk").disabled = true; $("lnMsg").textContent = "Anotando…";
+    try {
+      const j = await chamar({acao: "t_lead_novo", l}, 60000);
+      lerLeadsDe(j); leadForm = false; leadFeito = {texto: `${l.nome} entrou nos leads${l.proximo ? `, para chamar em ${ddIso(l.proximo)}` : ""}.`};
+      telaLeads(); window.scrollTo({top: 0});
+    } catch(e){ $("lnOk").disabled = false; $("lnMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi anotado. Tente de novo quando a internet voltar."; }
+    finally { leadEnviando = false; }
+  };
+}
+
+function editarLead(l){
+  if (!l || !$("ldEd")) return;
+  $("ldEd").innerHTML = `<div class="card form">
+    <div><span class="rot">Etapa</span>${escolha("leEtapa", (LEADS.etapas || []).map(e => [e, e]), l.etapa)}</div>
+    ${l.interesse ? "" : `<div><span class="rot">Interesse</span>${escolha("leInt", [["Consultoria online", "Consultoria online"], ["Personal presencial", "Presencial"]], "")}</div>`}
+    <label>Plano / valor (quando mandar a proposta)<input class="busca" id="lePlano" maxlength="80" value="${esc(l.plano)}" placeholder="Ex.: Trimestral R$ 497"></label>
+    <label id="leMotRot"${l.etapa === "Não fechou" ? "" : " hidden"}>Motivo<select id="leMot"><option value="">Escolha</option>${opcoes((LEADS.motivos || []).map(m => [m, m]), l.motivo)}</select></label>
+    <label>Próximo contato<input class="busca" type="date" id="leProx" value="${esc(l.proximo)}"></label>${datasRapidas("leProx")}
+    <label>Acrescentar observação (a de antes continua)<input class="busca" id="leObs" maxlength="300"></label>
+    ${l.obs ? `<p class="sub">Observações: ${esc(l.obs)}</p>` : ""}
+    <p class="sub" id="leMsg"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="leOk">Salvar na planilha</button></div></div>`;
+  ligarEscolha("leEtapa", v => { $("leMotRot").hidden = v !== "Não fechou"; if (v === "Fechou" || v === "Não fechou") $("leProx").value = ""; });
+  if ($("leInt")) ligarEscolha("leInt");
+  ligarDatas("leProx");
+  $("leOk").onclick = async () => {
+    const m = {etapa: valorDe("leEtapa"), plano: txt($("lePlano").value), proximo: $("leProx").value, motivo: $("leMot").value, obs_mais: txt($("leObs").value)};
+    if ($("leInt") && valorDe("leInt")) m.interesse = valorDe("leInt");
+    if (m.etapa === "Fechou" && !l.interesse && !m.interesse){ $("leMsg").textContent = "Escolha o interesse: consultoria online ou presencial."; return; }
+    if (ABERTAS.includes(m.etapa) && !m.proximo && !confirm("Deixar sem data de próximo contato? Ele não entra na agenda.")) return;
+    if (leadEnviando) return; leadEnviando = true; $("leOk").disabled = true; $("leMsg").textContent = "Salvando…";
+    try {
+      const j = await chamar({acao: "t_lead_mudar", linha: l.linha, nome: l.nome, m}, 60000);
+      lerLeadsDe(j); leadAberto = 0;
+      leadFeito = {nome: l.nome, fechou: m.etapa === "Fechou" && l.etapa !== "Fechou" && (m.interesse || l.interesse) === "Consultoria online",
+        texto: m.etapa === "Fechou" && l.etapa !== "Fechou" ? `${l.nome} fechou! Amanhã de manhã a rotina dos leads cria a pasta do aluno.` : `${l.nome}: ${m.etapa}${m.proximo ? `, chamar em ${ddIso(m.proximo)}` : ""}.`};
+      telaLeads(); window.scrollTo({top: 0});
+    } catch(e){ $("leOk").disabled = false; $("leMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi salvo. Tente de novo quando a internet voltar."; }
+    finally { leadEnviando = false; }
+  };
+}
+
 // ---------- abrir ----------
 let lendo = false;
 async function atualizar(){
@@ -1160,7 +1313,7 @@ async function atualizar(){
       $("tentar") && ($("tentar").onclick = atualizar);
   } finally { lendo = false; }
 }
-$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "fin") lerFin(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a) carregarAluno(a, () => r.aba === "evolucao" ? evolucaoAluno(a) : registrarAluno(a)); } };
+$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "fin") lerFin(); if (r.tela === "leads") lerLeads(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a) carregarAluno(a, () => r.aba === "evolucao" ? evolucaoAluno(a) : registrarAluno(a)); } };
 window.addEventListener("online", () => { tentativas = 0; enviar(); });
 window.addEventListener("offline", () => mostrarStatus(Object.keys(FILA).length ? "offline" : "velho"));
 document.addEventListener("visibilitychange", () => {
