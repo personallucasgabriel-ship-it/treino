@@ -152,6 +152,7 @@ function render(rolar){
   if (!INICIO) { $("tela").innerHTML = `<p class="carregando">Lendo os seus alunos no Drive… (na primeira vez demora uns segundos)</p>`; return; }
   if (r.tela === "alunos") telaAlunos();
   else if (r.tela === "a") telaAluno(r.chave, r.aba);
+  else if (r.tela === "fin") telaFin();
   else telaHoje();
   if (rolar) window.scrollTo({top: 0});
 }
@@ -163,7 +164,7 @@ function telaSemChave(){
   $("okch").onclick = () => { const v = $("ch").value.replace(/[^A-Za-z0-9]/g, ""); if (v.length >= 24){ guardar("t_chave", v); location.hash = "#/hoje"; location.reload(); } };
 }
 
-// ---------- WhatsApp: as mensagens são as de ferramentas/guia-consultoria/mensagens-whatsapp.md e da skill secretaria ----------
+// ---------- WhatsApp: as mensagens são as de ferramentas/mensagens-whatsapp/mensagens-whatsapp.md e da skill secretaria ----------
 const MSG = {
   conversa: a => `Oi, ${primeiro(a.nome)}! `,
   // "Treino chegou: app", com o link do app DESTE aluno (planilha de acessos; servidor versão 5)
@@ -171,8 +172,13 @@ const MSG = {
   registro: (a, N) => `Oi, ${primeiro(a.nome)}! Como está sendo a semana de treino? 💪\n\nVi que faltam treinos anotados no app esta semana. Se você já treinou, anota lá as repetições e as cargas de cada série, tá? É com elas que eu acompanho a sua evolução e ajusto o seu treino 🙂`,
   fotos: a => `Oi, ${primeiro(a.nome)}! Chegou o dia da sua reavaliação 📸\n\nÉ tudo pelo mesmo formulário:\n• as 4 fotos (lembra do Guia de fotos: mesmo lugar, mesma luz e mesmo horário)\n• o feedback do mês, que leva uns 2 minutinhos\n\n${FORM_FOTOS}\n\nMe manda até sábado, que no domingo te envio o seu relatório de evolução 📈`,
   // umas 2 semanas antes do fim do plano; depois do fim, o lembrete curto
-  renovar: a => { const fim = fimDoPlano(ciclo(a)); if (!fim || hojeZero() > fim) return MSG.lembrarRenovar(a);
-    return `Oi, ${primeiro(a.nome)}! Tudo bem? 😊\n\nPassando com antecedência pra você se organizar: o seu plano vai até domingo, dia ${dd(fim)}. Estamos na reta final do ciclo! 🏁\n\nFoi muito bom acompanhar a sua evolução até aqui 💪 E o próximo ciclo não começa do zero: eu monto o treino novo em cima da sua reavaliação de fim de ciclo (fotos e relatório), com o que você já conquistou e o que ainda dá pra melhorar.\n\nConfirmando agora, dá tempo de eu preparar tudo com calma: o treino novo chega nesse mesmo domingo e você já começa na segunda, sem ficar nem um dia parado.\n\nBora pro próximo? Me fala se vai seguir no mesmo plano ou se prefere trocar de plano, que eu te mando o link pra renovar 🙂\n\nE se tiver alguma coisa que você quer mudar no próximo ciclo (dias de treino, foco, algum exercício), me conta também!`; },
+  renovar: a => { const fim = fimDoPlano(ciclo(a)); if (!fim || hojeZero() > fim) return MSG.lembrarRenovar(a); return MSG.textoRenovar(a.nome, fim); },
+  // financeiro: o fim do plano vem da aba Alunos da planilha do financeiro
+  renovarFin: (nome, fimIso) => { const fim = isoData(fimIso); if (!fim || hojeZero() > fim) return MSG.lembrarRenovar({nome}); return MSG.textoRenovar(nome, fim); },
+  // cobrança de pagamento em aberto (skill financeiro, seção 6)
+  cobrar: (nome, plano) => `Oi, ${primeiro(nome)}! Tudo bem? 😊\n\nPassando pra lembrar do pagamento do seu plano ${plano}, que ainda não apareceu aqui pra mim. Se já pagou, me manda o comprovante que eu confiro. Se precisar do link de novo, é só falar!`,
+  textoRenovar: (nome, fim) => {
+    return `Oi, ${primeiro(nome)}! Tudo bem? 😊\n\nPassando com antecedência pra você se organizar: o seu plano vai até ${NOMES[SEMANA_JS[fim.getDay()]].toLowerCase()}, dia ${dd(fim)}. Estamos na reta final do ciclo! 🏁\n\nFoi muito bom acompanhar a sua evolução até aqui 💪 E o próximo ciclo não começa do zero: eu monto o treino novo em cima da sua reavaliação de fim de ciclo (fotos e relatório), com o que você já conquistou e o que ainda dá pra melhorar.\n\nConfirmando agora, dá tempo de eu preparar tudo com calma: o treino novo chega nesse mesmo domingo e você já começa na segunda, sem ficar nem um dia parado.\n\nBora pro próximo? Me fala se vai seguir no mesmo plano ou se prefere trocar de plano, que eu te mando o link pra renovar 🙂\n\nE se tiver alguma coisa que você quer mudar no próximo ciclo (dias de treino, foco, algum exercício), me conta também!`; },
   lembrarRenovar: a => `Oi, ${primeiro(a.nome)}! Conseguiu pensar no próximo ciclo? 😊 Me fala se vai seguir comigo, que eu já deixo o seu treino novo pronto 💪`
 };
 // domingo em que o plano acaba: o da semana da revisão (revisão numa segunda = começo do ciclo seguinte), como na skill secretaria
@@ -942,6 +948,196 @@ function passo(){ const s = Math.max(0, Math.ceil((fim - Date.now())/1000)); $("
 $("mais").onclick = () => { fim = Math.max(fim, Date.now()) + 15000; T.classList.remove("fim"); clearInterval(tick); tick = setInterval(passo, 250); passo(); manterTela(true); };
 $("parar").onclick = () => { clearInterval(tick); tick = null; T.hidden = true; document.body.classList.remove("timer-on"); manterTela(false); };
 
+// ---------- FINANCEIRO (servidor versão 8; planilha "Financeiro da Consultoria", skill financeiro) ----------
+// Só a consultoria online. Lê com t_fin; anota com t_fin_pag (pagamento), t_fin_gasto (gasto) e t_fin_recebi (Aguardando → Pago).
+// Anotar precisa de internet (não entra na fila do Registrar): se falhar, o formulário continua aberto para tentar de novo.
+const FIN_DESDE = 8;
+let FIN = ler("t_fin"), finLendo = false, finForm = "", finFeito = null, finEnviando = false;
+const real = n => n == null || n === "" ? "—" : Number(n).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+const pctTxt = n => n == null ? "—" : (n * 100).toLocaleString("pt-BR", {maximumFractionDigits: 1}) + "%";
+const isoDe = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const ddIso = s => { const d = isoData(s); return d ? dd(d) : "—"; };
+const zapNum = (num, texto) => `https://wa.me/${num}?text=${encodeURIComponent(texto)}`;
+const semAc = s => txt(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+function proximaSegunda(){ const h = hojeZero(); return new Date(h.getFullYear(), h.getMonth(), h.getDate() + (8 - h.getDay()) % 7); }
+const finAlunoDe = nome => (FIN.alunos || []).find(a => semAc(a.aluno) === semAc(nome));
+
+async function lerFin(silencioso){
+  if (finLendo) return; finLendo = true;
+  try {
+    const j = await chamar({acao: "t_fin"}, 60000);
+    FIN = {resumo: j.resumo, alunos: j.alunos, abertos: j.abertos, planos: j.planos, cupons: j.cupons, categorias: j.categorias,
+      formas_gasto: j.formas_gasto, origens: j.origens, planilha: j.planilha, lido_em: j.lido_em};
+    guardar("t_fin", FIN);
+    const foco = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (rota().tela === "fin" && !finForm && !foco) telaFin();
+  } catch(e){
+    if (!silencioso) aviso(e.servidor && /desconhecida/i.test(e.message) ? "O servidor ainda é a versão antiga: cole o código novo (Ligar o app do treinador)." : e.servidor ? e.message : "Sem internet: mostrando a última leitura.");
+    if (rota().tela === "fin" && !FIN) telaFin(e);
+  } finally { finLendo = false; }
+}
+
+function fatoFin(t, v, s, destaque){ return `<div class="fato${destaque ? " destaque" : ""}"><small>${t}</small><b>${v}</b>${s ? `<span>${s}</span>` : ""}</div>`; }
+
+function telaFin(erro){
+  let h = `<div><div class="eyebrow">Consultoria online</div><h1>Financeiro</h1></div>`;
+  if (!FIN){
+    h += erro ? `<div class="card"><h2>Não consegui abrir o financeiro</h2><p class="sub">${esc(erro.servidor && /desconhecida/i.test(erro.message) ? "O servidor do app ainda é a versão antiga. Cole o código novo pela página Ligar o app do treinador (versão 8) e toque em ↻." : erro.servidor ? erro.message : "Sem internet. Na primeira vez, o app precisa de internet para ler a planilha do financeiro.")}</p><button class="btn amarelo" type="button" id="finTentar">Tentar de novo</button></div>`
+      : `<p class="carregando">Lendo a planilha do financeiro…</p>`;
+    $("tela").innerHTML = h;
+    if ($("finTentar")) $("finTentar").onclick = () => { telaFin(); lerFin(); };
+    if (!erro) lerFin();
+    return;
+  }
+  const r = FIN.resumo || {};
+  if (finFeito) h += `<div class="card ok-card"><h3>Anotado ✓</h3><p class="sub">${esc(finFeito)}</p></div>`;
+  h += `<div class="fatos">
+    ${fatoFin("Entrou na conta este mês", real(r.entrou), `gastos ${real(r.gastos)}`)}
+    ${fatoFin("Lucro do mês", real(r.lucro), `margem ${pctTxt(r.margem)}`, true)}
+    ${fatoFin("A receber", real((r.em_aberto || 0) + (r.cartao_cair || 0)), `em aberto ${real(r.em_aberto)} · cartão ${real(r.cartao_cair)}`)}
+    ${fatoFin("Receita por mês dos planos", real(r.receita_mensal), plural(r.ativos || 0, "aluno ativo", "alunos ativos"))}
+  </div>`;
+  h += `<div class="acoes"><button class="btn amarelo" type="button" data-form="pag" aria-pressed="${finForm === "pag"}">+ Pagamento recebido</button><button class="btn" type="button" data-form="gasto" aria-pressed="${finForm === "gasto"}">+ Gasto</button></div>`;
+  h += `<div id="finForm"></div>`;
+
+  // cobrar: pagamentos "Aguardando"
+  const ab = (FIN.abertos || []).slice().sort((x, y) => (x.data || "").localeCompare(y.data || ""));
+  h += `<section class="secao"><header><h2>Cobrar</h2><span class="cont">${plural(ab.length, "em aberto")}</span></header>`;
+  h += ab.length ? `<div class="lista">${ab.map(p => `<div class="aluno"><span class="bola atencao"></span><span class="meio"><h3>${esc(p.aluno)}</h3><p>${esc(p.plano)} · ${real(p.valor)} · ${esc(p.forma === "Cartão (Eduzz)" ? `cartão ${p.parcelas}x` : p.forma || "")}${p.data ? ` · desde ${ddIso(p.data)}` : ""}</p></span>
+      <span class="acoes">${p.whats ? `<a class="btn" href="${esc(zapNum(p.whats, MSG.cobrar(p.aluno, p.plano)))}" target="_blank" rel="noopener">Cobrar</a>` : ""}<button class="btn amarelo" type="button" data-recebi="${p.linha}">Recebi</button></span></div>`).join("")}</div>`
+    : `<p class="vazio">Nenhum pagamento em aberto.</p>`;
+  h += `</section>`;
+
+  // renovar: plano acabando (13 dias antes) ou que acabou há até 7 dias
+  const ren = (FIN.alunos || []).filter(a => a.situacao === "Perguntar se renova" || a.situacao === "Plano acabou").sort((x, y) => (x.dias || 0) - (y.dias || 0));
+  h += `<section class="secao"><header><h2>Renovar</h2><span class="cont">plano acabando</span></header>`;
+  h += ren.length ? `<div class="lista">${ren.map(a => { const n = a.dias == null ? 0 : Math.round(a.dias);
+      return `<div class="aluno"><span class="bola ${n < 0 ? "atencao" : "aviso"}"></span><span class="meio"><h3>${esc(a.aluno)}</h3><p>${esc(a.plano)} · ${n > 0 ? `acaba em ${ddIso(a.fim)} (faltam ${plural(n, "dia")})` : n === 0 ? "acaba hoje" : `acabou em ${ddIso(a.fim)}`}</p></span>
+        <span class="acoes">${a.whats ? `<a class="btn amarelo" href="${esc(zapNum(a.whats, n >= 0 ? MSG.renovarFin(a.aluno, a.fim) : MSG.lembrarRenovar({nome: a.aluno})))}" target="_blank" rel="noopener">${n >= 0 ? "Perguntar" : "Lembrar"}</a>` : ""}<button class="btn" type="button" data-renovou="${esc(a.aluno)}">Renovou</button></span></div>`; }).join("")}</div>`
+    : `<p class="vazio">Nenhum plano acabando nos próximos 13 dias.</p>`;
+  h += `</section>`;
+  const quando = FIN.lido_em ? new Date(FIN.lido_em) : null;
+  h += `<p class="sub">${quando ? `Lido da planilha às ${String(quando.getHours()).padStart(2,"0")}:${String(quando.getMinutes()).padStart(2,"0")} de ${dd(quando)}. ` : ""}<a href="${esc(FIN.planilha || "#")}" target="_blank" rel="noopener">Abrir a planilha</a></p>`;
+  $("tela").innerHTML = h;
+
+  document.querySelectorAll("[data-form]").forEach(b => b.onclick = () => { finForm = finForm === b.dataset.form ? "" : b.dataset.form; finFeito = null; telaFin(); if (finForm) $("finForm").scrollIntoView({block: "start", behavior: "smooth"}); });
+  document.querySelectorAll("[data-recebi]").forEach(b => b.onclick = () => recebi(Number(b.dataset.recebi), b));
+  document.querySelectorAll("[data-renovou]").forEach(b => b.onclick = () => { finForm = "pag"; finFeito = null; telaFin(); $("fpAluno").value = b.dataset.renovou; $("fpAluno").dispatchEvent(new Event("input")); $("finForm").scrollIntoView({block: "start", behavior: "smooth"}); });
+  if (finForm === "pag") formPagamento();
+  else if (finForm === "gasto") formGasto();
+  if (!quando || Date.now() - quando > 5 * 60e3) lerFin(true);
+}
+
+async function recebi(linha, btn){
+  const p = (FIN.abertos || []).find(x => x.linha === linha); if (!p) return;
+  if (!confirm(`Marcar como recebido o pagamento de ${p.aluno} (${p.plano}, ${real(p.valor)})?`)) return;
+  btn.disabled = true;
+  try {
+    const j = await chamar({acao: "t_fin_recebi", linha, aluno: p.aluno}, 60000);
+    finFeito = `${p.aluno}: pagamento de ${real(p.valor)} marcado como recebido.`;
+    await lerFinDe(j);
+  } catch(e){ btn.disabled = false; aviso(e.servidor ? e.message : "Sem internet: tente de novo quando a internet voltar."); }
+}
+function lerFinDe(j){
+  FIN = {resumo: j.resumo, alunos: j.alunos, abertos: j.abertos, planos: j.planos, cupons: j.cupons, categorias: j.categorias,
+    formas_gasto: j.formas_gasto, origens: j.origens, planilha: j.planilha, lido_em: j.lido_em};
+  guardar("t_fin", FIN); finForm = ""; telaFin(); window.scrollTo({top: 0});
+}
+
+const opcoes = (lista, atual) => lista.map(([v, t]) => `<option value="${esc(v)}"${v === atual ? " selected" : ""}>${esc(t)}</option>`).join("");
+const escolha = (id, itens, atual) => `<div class="filtros" role="group" id="${id}">${itens.map(([v, t]) => `<button type="button" data-v="${esc(v)}" aria-pressed="${v === atual}">${esc(t)}</button>`).join("")}</div>`;
+function ligarEscolha(id, aoMudar){ document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => { document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute("aria-pressed", String(x === b))); aoMudar && aoMudar(b.dataset.v); }); }
+const valorDe = id => { const b = document.querySelector(`#${id} button[aria-pressed="true"]`); return b ? b.dataset.v : ""; };
+
+function formPagamento(){
+  const planos = FIN.planos || [], cupons = FIN.cupons || [];
+  const nomes = [...new Set([...(FIN.alunos || []).map(a => a.aluno), ...((INICIO.alunos || []).filter(a => a.modalidade === "consultoria").map(a => a.nome))])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  $("finForm").innerHTML = `<div class="card form"><h2>Pagamento recebido</h2>
+    <label>Aluno<input class="busca" id="fpAluno" list="fpNomes" autocomplete="off" placeholder="Nome completo"></label>
+    <datalist id="fpNomes">${nomes.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+    <p class="sub" id="fpTipo"></p>
+    <label>Plano<select id="fpPlano">${opcoes(planos.map(p => [p.nome, `${p.nome} · ${real(p.preco)}`]), (planos.find(p => p.nome === "Trimestral") || planos[0] || {}).nome)}</select></label>
+    <label>Início do plano (a segunda em que o treino começa)<input class="busca" type="date" id="fpInicio"></label>
+    <p class="sub" id="fpSeg"></p>
+    <div><span class="rot">Forma de pagamento</span>${escolha("fpForma", [["Pix", "Pix"], ["Cartão (Eduzz)", "Cartão (Eduzz)"]], "Pix")}</div>
+    <label id="fpParcRot" hidden>Parcelas<select id="fpParc"></select></label>
+    <label>Cupom de influenciador<select id="fpCupom"><option value="">Sem cupom</option>${opcoes(cupons.map(c => [c.cupom, `${c.cupom} (${c.influenciador})`]))}</select></label>
+    <label>Outro valor (só se combinou um valor diferente da tabela)<input class="busca" id="fpOutro" inputmode="decimal" placeholder="Deixe vazio para o preço da tabela"></label>
+    <div><span class="rot">O dinheiro já entrou?</span>${escolha("fpSit", [["Pago", "Sim, já pagou"], ["Aguardando", "Ainda não"]], "Pago")}</div>
+    <label>Data do pagamento (no cartão, o dia da venda)<input class="busca" type="date" id="fpData" value="${isoDe(hojeZero())}"></label>
+    <label>Observação (opcional)<input class="busca" id="fpObs" maxlength="300"></label>
+    <p class="sub" id="fpMsg"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="fpOk">Anotar na planilha</button><button class="btn" type="button" id="fpX">Cancelar</button></div></div>`;
+  const plano = () => planos.find(p => p.nome === $("fpPlano").value) || {};
+  const parcelas = () => { const max = plano().parcelas || 1, atual = $("fpParc").value; $("fpParc").innerHTML = opcoes(Array.from({length: max}, (_, i) => [String(i + 1), `${i + 1}x`]), atual && Number(atual) <= max ? atual : String(max)); };
+  const forma = v => { $("fpParcRot").hidden = v !== "Cartão (Eduzz)"; parcelas(); };
+  const conferirSeg = () => { const d = isoData($("fpInicio").value); $("fpSeg").textContent = d && d.getDay() !== 1 ? "Atenção: essa data não é uma segunda-feira." : ""; };
+  const aluno = () => {
+    const a = finAlunoDe($("fpAluno").value), hoje = hojeZero();
+    if (!txt($("fpAluno").value)){ $("fpTipo").textContent = ""; return; }
+    if (a && a.fim){
+      const fim = isoData(a.fim), novo = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate() + 1), renov = dias(fim, hoje) <= 7;
+      $("fpTipo").textContent = renov ? `Renovação: o plano atual (${a.plano}) vai até ${dd(fim)}, então o novo começa em ${dd(novo)}.` : `Aluno que voltou: o último plano acabou em ${ddIso(a.fim)}.`;
+      $("fpInicio").value = isoDe(renov ? novo : proximaSegunda());
+      if (planos.some(p => p.nome === a.plano)){ $("fpPlano").value = a.plano; $("fpParc").value = ""; parcelas(); }
+    } else {
+      $("fpTipo").textContent = "Aluno novo na planilha do financeiro.";
+      if (!$("fpInicio").value) $("fpInicio").value = isoDe(proximaSegunda());
+    }
+    conferirSeg();
+  };
+  $("fpInicio").value = isoDe(proximaSegunda()); conferirSeg();
+  forma("Pix");
+  ligarEscolha("fpForma", forma); ligarEscolha("fpSit");
+  $("fpPlano").onchange = () => { $("fpParc").value = ""; parcelas(); };
+  $("fpAluno").oninput = aluno;
+  $("fpInicio").onchange = conferirSeg;
+  $("fpX").onclick = () => { finForm = ""; telaFin(); };
+  $("fpOk").onclick = async () => {
+    const p = {aluno: txt($("fpAluno").value), plano: $("fpPlano").value, inicio: $("fpInicio").value, forma: valorDe("fpForma"),
+      parcelas: valorDe("fpForma") === "Pix" ? 1 : Number($("fpParc").value), cupom: $("fpCupom").value, outro: txt($("fpOutro").value),
+      situacao: valorDe("fpSit"), data: $("fpData").value, obs: txt($("fpObs").value)};
+    if (!p.aluno || !p.plano || !p.inicio){ $("fpMsg").textContent = "Preencha o aluno, o plano e o início do plano."; return; }
+    if (finEnviando) return; finEnviando = true; $("fpOk").disabled = true; $("fpMsg").textContent = "Anotando…";
+    try {
+      const j = await chamar({acao: "t_fin_pag", p}, 60000), f = j.feito || {};
+      finFeito = `${f.aluno}: ${f.plano} (${String(f.tipo || "").toLowerCase()}) de ${ddIso(f.inicio)} a ${ddIso(f.fim)}, ${real(f.valor)}${f.desconto ? ` (com ${real(f.desconto)} de desconto do cupom)` : ""}. ${f.situacao === "Pago" ? `${f.taxa ? `Taxa da Eduzz ~${real(f.taxa)}; c` : "C"}aem ${real(f.liquido)} em ${ddIso(f.cai_em)}.` : "Ficou como aguardando o pagamento."}${f.repasse ? ` Repasse de ${real(f.repasse)} para ${f.influenciador}.` : ""}`;
+      lerFinDe(j);
+    } catch(e){ $("fpOk").disabled = false; $("fpMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi anotado. Tente de novo quando a internet voltar."; }
+    finally { finEnviando = false; }
+  };
+}
+
+function formGasto(){
+  const cats = FIN.categorias || [], formas = FIN.formas_gasto || ["Pix"];
+  $("finForm").innerHTML = `<div class="card form"><h2>Gasto</h2>
+    <label>O que foi<input class="busca" id="fgDesc" maxlength="200" placeholder="Ex.: anúncio no Instagram"></label>
+    <label>Valor (R$)<input class="busca" id="fgValor" inputmode="decimal" placeholder="0,00"></label>
+    <label>Categoria<select id="fgCat"><option value="">Escolha</option>${opcoes(cats.map(c => [c.nome, c.nome]))}</select></label>
+    <label>Forma de pagamento<select id="fgForma">${opcoes(formas.map(f => [f, f]), "Pix")}</select></label>
+    <div><span class="rot">Tem nota ou recibo?</span>${escolha("fgNota", [["Sim", "Sim"], ["Não", "Não"]], "")}</div>
+    <label>Data<input class="busca" type="date" id="fgData" value="${isoDe(hojeZero())}"></label>
+    <label>Observação (opcional)<input class="busca" id="fgObs" maxlength="300"></label>
+    <p class="sub">O que você tira para a sua vida pessoal vai como "Retirada para mim". A taxa da Eduzz não entra aqui: ela já sai dos pagamentos.</p>
+    <p class="sub" id="fgMsg"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="fgOk">Anotar na planilha</button><button class="btn" type="button" id="fgX">Cancelar</button></div></div>`;
+  ligarEscolha("fgNota");
+  $("fgX").onclick = () => { finForm = ""; telaFin(); };
+  $("fgOk").onclick = async () => {
+    const bruto = txt($("fgValor").value).replace(/R\$|\s/g, "");
+    const g = {descricao: txt($("fgDesc").value), valor: bruto.includes(",") ? bruto.replace(/\./g, "").replace(",", ".") : bruto, categoria: $("fgCat").value,
+      forma: $("fgForma").value, nota: valorDe("fgNota"), data: $("fgData").value, obs: txt($("fgObs").value)};
+    if (!g.descricao || !(Number(g.valor) > 0) || !g.categoria){ $("fgMsg").textContent = "Preencha o que foi, o valor e a categoria."; return; }
+    if (finEnviando) return; finEnviando = true; $("fgOk").disabled = true; $("fgMsg").textContent = "Anotando…";
+    try {
+      const j = await chamar({acao: "t_fin_gasto", g}, 60000), f = j.feito || {};
+      finFeito = `${real(f.valor)} em ${f.categoria} (${f.descricao}).`;
+      lerFinDe(j);
+    } catch(e){ $("fgOk").disabled = false; $("fgMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi anotado. Tente de novo quando a internet voltar."; }
+    finally { finEnviando = false; }
+  };
+}
+
 // ---------- abrir ----------
 let lendo = false;
 async function atualizar(){
@@ -964,7 +1160,7 @@ async function atualizar(){
       $("tentar") && ($("tentar").onclick = atualizar);
   } finally { lendo = false; }
 }
-$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a) carregarAluno(a, () => r.aba === "evolucao" ? evolucaoAluno(a) : registrarAluno(a)); } };
+$("recarregar").onclick = () => { atualizar(); const r = rota(); if (r.tela === "fin") lerFin(); if (r.tela === "a" && r.aba !== "resumo"){ const a = alunoPorChave(r.chave); if (a) carregarAluno(a, () => r.aba === "evolucao" ? evolucaoAluno(a) : registrarAluno(a)); } };
 window.addEventListener("online", () => { tentativas = 0; enviar(); });
 window.addEventListener("offline", () => mostrarStatus(Object.keys(FILA).length ? "offline" : "velho"));
 document.addEventListener("visibilitychange", () => {

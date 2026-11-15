@@ -205,6 +205,16 @@ nav.baixo a[aria-current="page"]{color:var(--preto);background:var(--amarelo)}
 .carregando{color:var(--cinza);padding:32px 0;text-align:center}
 .grande{width:100%;border:0;border-radius:14px;padding:15px;font-family:var(--f-titulo);font-weight:800;font-size:16px;text-transform:uppercase;letter-spacing:.04em;background:var(--amarelo);color:var(--preto)}
 @media (min-width:520px){.fatos{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.fato.destaque{background:var(--amarelo);border-color:var(--amarelo);color:var(--preto)}
+.fato.destaque small,.fato.destaque span{color:var(--preto)}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--cinza)}
+.form label[hidden]{display:none}
+.form .rot{display:block;font-size:12px;color:var(--cinza);margin-bottom:4px}
+.form select{width:100%;background:var(--carvao);border:1px solid var(--linha);border-radius:12px;padding:11px 12px;color:var(--branco);font:inherit}
+.form input[type=date]{color-scheme:dark}
+.form .busca,.form select{font-size:16px}
+.ok-card{border-color:var(--verde)}
+.aluno .acoes{flex:0 0 auto;flex-wrap:nowrap}
 </style>
 </head>
 <body>
@@ -220,6 +230,7 @@ nav.baixo a[aria-current="page"]{color:var(--preto);background:var(--amarelo)}
 <nav class="baixo" id="nav" aria-label="Telas">
   <a href="#/hoje" data-r="hoje">Hoje</a>
   <a href="#/alunos" data-r="alunos">Alunos</a>
+  <a href="#/fin" data-r="fin">Financeiro</a>
 </nav>
 <div class="timer" id="timer" hidden role="timer" aria-live="polite">
   <span class="t" id="tempo">1:30</span>
