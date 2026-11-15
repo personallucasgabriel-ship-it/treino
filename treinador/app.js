@@ -1474,7 +1474,8 @@ function pintarFotos(a){
   const pasta = (lista.find(f => f.pasta) || {}).pasta;
   // "Sua análise" (pedido do criador, 15/11/2026): vai no PDF das fotos; fica guardada no celular, por par de datas
   h += `<label class="sub" for="fAnalise">Sua análise (vai no PDF das fotos${mostrar.length > 1 ? `, ${rotData(antes)} e ${rotData(depois)}` : ""})</label>
-    <textarea id="fAnalise" class="nota" rows="5" placeholder="Escreva ou cole aqui. Cada parágrafo numa linha.">${esc(ler(chaveAnalise(a, antes, depois)) || "")}</textarea>`;
+    <textarea id="fAnalise" class="nota" rows="5" placeholder="Escreva ou cole aqui. Cada parágrafo numa linha; linha começando com ## vira subtítulo.">${esc(ler(chaveAnalise(a, antes, depois)) || "")}</textarea>
+    <p class="sub">Textos prontos (toque para pôr no fim):</p><div class="filtros prontos">${TEXTOS_PRONTOS.map(([t], i) => `<button type="button" data-pronto="${i}">+ ${esc(t)}</button>`).join("")}</div>`;
   h += `<p class="sub">Toque numa foto para ver grande. O PDF das fotos sai com as datas escolhidas acima e o mesmo enquadramento nas duas fotos.</p>
     <div class="acoes"><button class="btn amarelo" type="button" id="pdfFotos">📄 PDF das fotos${mostrar.length > 1 ? " (antes e depois)" : ""}</button>${pasta ? `<a class="btn" href="${esc(pasta)}" target="_blank" rel="noopener">Abrir a pasta</a>` : ""}<button class="btn" type="button" id="fotosDeNovo">Procurar fotos novas</button></div></div></section>`;
   // análise das fotos: os PDFs aprovados que estão na pasta "Avaliações <Nome>" (skill treinador, 9.9; servidor versão 14)
@@ -1488,6 +1489,12 @@ function pintarFotos(a){
   el.innerHTML = h;
   botaoPdf($("pdfFotos"), () => pdfFotos(a));
   $("fAnalise").oninput = e => guardar(chaveAnalise(a, antes, depois), e.target.value);
+  el.querySelectorAll("[data-pronto]").forEach(b => b.onclick = () => {
+    const ta = $("fAnalise"), novo = TEXTOS_PRONTOS[b.dataset.pronto][1].replace("{antes}", rotData(antes)).replace("{depois}", rotData(depois));
+    ta.value = ta.value.trim() ? ta.value.replace(/\s+$/, "") + "\n" + novo : novo;
+    guardar(chaveAnalise(a, antes, depois), ta.value);
+    ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 4 + "px";
+  });
   const escolher = () => { FOTO_SEL[a.chave] = [$("fAntes").value, $("fDepois").value]; pintarFotos(a); };
   if ($("fAntes")){ $("fAntes").onchange = escolher; $("fDepois").onchange = escolher; }
   $("fotosDeNovo").onclick = () => { $("fotosDeNovo").disabled = true; lerFotosAluno(a, true); };
@@ -1497,6 +1504,22 @@ function pintarFotos(a){
       .catch(e => { msg.textContent = e.servidor ? "Não abriu" : "Sem internet"; b.onclick = () => pintarFotos(a); });
   });
 }
+// textos prontos para "Sua análise" (pedido do criador, 15/11/2026), escritos pelas regras de
+// .claude/skills/treinador/diretrizes.md (seções 4.3, 4.6, 4.7, 4.8 e 5.1): mudou o texto lá, mude aqui.
+// Linha que começa com "## " vira subtítulo no PDF. {antes} e {depois} viram as datas escolhidas.
+const TEXTOS_PRONTOS = [
+  ["Como comparamos", "## Como as fotos foram comparadas\nComparamos as fotos de {antes} e de {depois}, nos mesmos ângulos (frente, lados e costas), com o corpo do mesmo tamanho e na mesma posição nas duas fotos."],
+  ["Postura: se policiar", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. Ao longo do dia, vale se policiar: ombros relaxados, peito aberto e a barriga levemente firme quando estiver em pé ou sentado. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
+  ["Postura: celular", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. Ao longo do dia, vale se policiar com a cabeça: traga o celular para a altura dos olhos, em vez de descer a cabeça até ele, e deixe a tela do computador na altura do olhar. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
+  ["Postura: ombros", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. Ao longo do dia, vale se policiar com os ombros: deixe-os relaxados, longe das orelhas, e o peito aberto, principalmente quando estiver sentado ou no celular. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
+  ["Postura: manter", "## Um recado sobre a sua postura\nO treino e os alongamentos fazem uma parte, e o seu dia a dia faz a outra. A sua postura está bem cuidada: continue com esses cuidados que estão funcionando. Não precisa ser perfeito o tempo todo; são esses lembretes, todos os dias, que somam com o treino."],
+  ["Lados diferentes", "Pequenas diferenças entre o lado direito e o esquerdo são comuns em quase todo mundo. O objetivo é melhorar, não ficar perfeito."],
+  ["Cabeça à frente", "Notamos uma anteriorização da cabeça, ou seja, a cabeça fica um pouco à frente da linha dos ombros. Isso é muito comum em quem passa bastante tempo no celular ou no computador, e responde bem ao treino."],
+  ["Ombros à frente", "Notamos uma protrusão de ombros, ou seja, os ombros ficam levemente projetados para frente. É muito comum, costuma estar ligado aos hábitos do dia a dia, e o treino ajuda a melhorar."],
+  ["Joelhos para trás", "Notamos uma hiperextensão de joelhos, ou seja, os joelhos ficam bem estendidos para trás quando você está em pé. É comum, e fortalecer glúteos e posteriores ajuda a melhorar."],
+  ["Gordura localizada", "Não existe perda de gordura localizada só treinando uma região: a gordura diminui no corpo todo, com o treino de força e a alimentação."],
+  ["Sobre esta análise", "## Sobre esta análise\nÉ uma análise visual, feita a partir das fotos. Ela depende de fotos tiradas sempre do mesmo jeito (mesmo lugar, mesma luz e mesmo horário) e complementa as medidas e o acompanhamento, sem substituí-los."]
+];
 // a foto (miniatura de 1200 px) fica guardada no celular depois da 1ª vez: abre rápido e sem internet
 const FILA_FOTOS = []; let fotosBaixando = 0;
 function carregarFoto(a, id){

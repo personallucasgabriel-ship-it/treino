@@ -360,7 +360,10 @@ async function pdfFotos(a){
   });
   if (analise){
     R.h2("Análise", "Lucas Gabriel · Treinador");
-    analise.split(/\n+/).map(t => t.trim()).filter(Boolean).forEach(t => R.p(t, 10, COR.texto));
+    analise.split(/\n+/).map(t => t.trim()).filter(Boolean).forEach(t => {
+      if (/^#{2,3}\s/.test(t)){ R.precisa(16); R.y += 2; doc.setFont("helvetica", "bold"); doc.setFontSize(11); R.cor(COR.preto); doc.text(pdfTxt(t.replace(/^#+\s*/, "")), M, R.y + 3.5); R.y += 7; }
+      else R.p(t.replace(/^[-•]\s+/, "• "), 10, COR.texto);
+    });
   }
   R.p("Fotos de uso pessoal: só você e o seu treinador.", 8);
   const arq = R.fim(`Fotos de avaliação ${a.nome} ${isoDe(hojeZero())}`);
