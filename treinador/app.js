@@ -1342,7 +1342,7 @@ function editarLead(l){
 // Muda exercício, séries, técnica e observação nos 9 lugares fixos de cada treino; e começa o ciclo novo a partir do atual.
 // Faixas de repetição, periodização e cardio continuam na planilha (computador).
 const PRESC_DESDE = 10;
-let PRESC_ED = "", PRESC_CICLO = false, prescEnviando = false;
+let PRESC_ED = "", PRESC_CICLO = false, PRESC_DATAS = false, prescEnviando = false;
 function semanasAnotadas(d, nome){
   const ws = new Set();
   Object.values(d.reg || {}).forEach(v => { for (let w = 1; w <= 12; w++) for (let k = 1; k <= 9; k++){ const row = v[linhaReg(w, k)] || [];
@@ -1354,7 +1354,7 @@ function prescricaoAluno(a){
   if (!p){ $("corpo").innerHTML = `<div class="card"><p class="sub">${esc(d.prescricaoErro || "Para mudar o treino pelo app, cole o código novo do servidor (página Ligar o app do treinador, versão 10) e toque em ↻.")}</p></div>`; return; }
   const T = lerTreino(d.treino || []), diasDe = L => ORDEM.filter(x => T.periodo[x] === L).map(x => NOMES[x].slice(0, 3).toLowerCase());
   let h = `<div class="card"><h3>Ciclo atual</h3><p class="sub">${c.entrega ? `Começou em ${ddaaaa(c.entrega)}` : "Sem data de entrega"}${c.revisao ? ` · revisão em ${ddaaaa(c.revisao)}` : ""}${c.semana ? ` · semana ${Math.min(c.semana, c.total)} de ${c.total}` : ""}</p>
-    <div class="acoes"><button class="btn${PRESC_CICLO ? " amarelo" : ""}" type="button" id="cnAbrir">Começar o ciclo novo a partir deste</button></div><div id="cnForm"></div></div>`;
+    <div class="acoes"><button class="btn${PRESC_DATAS ? " amarelo" : !c.entrega ? " amarelo" : ""}" type="button" id="dtAbrir">${PRESC_DATAS ? "Cancelar" : c.entrega ? "Mudar as datas" : "Pôr as datas do ciclo"}</button><button class="btn${PRESC_CICLO ? " amarelo" : ""}" type="button" id="cnAbrir">Começar o ciclo novo a partir deste</button></div><div id="dtForm"></div><div id="cnForm"></div></div>`;
   h += v11() ? cicloResumoHtml(a, d) : `<p class="sub">Faixas de repetição, periodização e cardio continuam na planilha. ${AVISO_V11}</p>`;
   ["A","B","C","D","E"].forEach(L => {
     const slots = (p.treinos || {})[L] || [], usados = slots.filter(s => s.nome), vago = slots.find(s => !s.nome), dias = diasDe(L);
@@ -1369,12 +1369,50 @@ function prescricaoAluno(a){
   });
   if (a.planilha) h += `<p class="sub"><a href="${esc(a.planilha)}" target="_blank" rel="noopener">Abrir a planilha</a></p>`;
   $("corpo").innerHTML = h;
-  document.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => { PRESC_ED = PRESC_ED === b.dataset.ed ? "" : b.dataset.ed; PRESC_CICLO = false; PLANO_ED = false; prescricaoAluno(a); });
-  $("cnAbrir").onclick = () => { PRESC_CICLO = !PRESC_CICLO; PRESC_ED = ""; PLANO_ED = false; prescricaoAluno(a); };
-  if ($("plAbrir")) $("plAbrir").onclick = () => { PLANO_ED = !PLANO_ED; PRESC_ED = ""; PRESC_CICLO = false; prescricaoAluno(a); if (PLANO_ED) $("plForm").scrollIntoView({behavior: "smooth", block: "start"}); };
+  document.querySelectorAll("[data-ed]").forEach(b => b.onclick = () => { PRESC_ED = PRESC_ED === b.dataset.ed ? "" : b.dataset.ed; PRESC_CICLO = false; PRESC_DATAS = false; PLANO_ED = false; prescricaoAluno(a); });
+  $("cnAbrir").onclick = () => { PRESC_CICLO = !PRESC_CICLO; PRESC_ED = ""; PRESC_DATAS = false; PLANO_ED = false; prescricaoAluno(a); };
+  $("dtAbrir").onclick = () => { PRESC_DATAS = !PRESC_DATAS; PRESC_ED = ""; PRESC_CICLO = false; PLANO_ED = false; prescricaoAluno(a); };
+  if ($("plAbrir")) $("plAbrir").onclick = () => { PLANO_ED = !PLANO_ED; PRESC_ED = ""; PRESC_CICLO = false; PRESC_DATAS = false; prescricaoAluno(a); if (PLANO_ED) $("plForm").scrollIntoView({behavior: "smooth", block: "start"}); };
   if (PLANO_ED) formPlano(a, d);
   if (PRESC_ED && $("exEd")) editarExercicio(a, d, p);
   if (PRESC_CICLO) formCiclo(a, c);
+  if (PRESC_DATAS) formDatas(a, d, c);
+}
+
+// datas do ciclo atual (servidor versão 16): para o primeiro treino do aluno novo, ou para acertar o começo e a revisão
+const DATAS_DESDE = 16;
+function formDatas(a, d, c){
+  if (((INICIO && INICIO.versao) || 0) < DATAS_DESDE){
+    $("dtForm").innerHTML = `<div class="card" style="margin-top:8px"><p class="sub">Para pôr as datas pelo app, cole o código novo do servidor (página Ligar o app do treinador, versão 16) e toque em ↻.</p></div>`; return; }
+  const ini = c.entrega || proximaSegunda();
+  const rev = c.revisao || new Date(ini.getFullYear(), ini.getMonth(), ini.getDate() + 7 * 12 - 3);
+  const dur = Math.round((rev - ini) / DIA_MS);
+  const anotou = Object.values(d.reg || {}).some(v => { for (let w = 1; w <= 12; w++) for (let k = 1; k <= 9; k++) if ((v[linhaReg(w, k)] || []).slice(1, 11).some(x => txt(x) !== "")) return true; return false; });
+  $("dtForm").innerHTML = `<div class="card form" style="margin-top:8px"><h3>Datas do ciclo</h3>
+    <p class="sub">${c.entrega ? "Muda o começo e a revisão deste ciclo, na mesma planilha." : `O dia em que ${esc(primeiro(a.nome))} começa a treinar e o dia da revisão. Com as datas, o app do aluno já abre na semana certa.`}</p>
+    <label>Começa em (segunda)<input class="busca" type="date" id="dtIni" value="${isoDe(ini)}"></label>
+    <label>Revisão<input class="busca" type="date" id="dtRev" value="${isoDe(rev)}"></label>
+    <p class="sub" id="dtMsg"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="dtOk">Salvar na planilha</button></div></div>`;
+  const conf = () => { const x = isoData($("dtIni").value); $("dtMsg").textContent = x && x.getDay() !== 1 ? "O treino começa numa segunda-feira." : x && x < hojeZero() && !c.entrega ? "Atenção: essa data já passou." : ""; };
+  $("dtIni").onchange = () => { const x = isoData($("dtIni").value); if (x && !c.revisao) $("dtRev").value = isoDe(new Date(x.getFullYear(), x.getMonth(), x.getDate() + dur)); conf(); };
+  conf();
+  $("dtOk").onclick = async () => {
+    const i = isoData($("dtIni").value), r = isoData($("dtRev").value);
+    if (!i || i.getDay() !== 1){ $("dtMsg").textContent = "Escolha uma segunda-feira para começar."; return; }
+    if (!r || r <= i){ $("dtMsg").textContent = "A revisão tem de ser depois do começo."; return; }
+    const mudouIni = !c.entrega || isoDe(c.entrega) !== isoDe(i);
+    if (anotou && mudouIni && !confirm(`${a.nome} já anotou treinos neste ciclo. Mudar o começo muda a semana de cada anotação (a semana 1 passa a ser a de ${ddaaaa(i)}). Mudar mesmo assim?`)) return;
+    if (!confirm(`Salvar: começa em ${ddaaaa(i)} e revisão em ${ddaaaa(r)}?`)) return;
+    if (prescEnviando) return; prescEnviando = true; $("dtOk").disabled = true; $("dtMsg").textContent = "Salvando…";
+    try {
+      const nd = await chamar({acao: "t_datas", aluno: a.chave, inicio: $("dtIni").value, revisao: $("dtRev").value}, 60000);
+      DADOS[a.chave] = nd; guardar("t_aluno:" + a.chave, nd); PRESC_DATAS = false;
+      $("dtForm").innerHTML = `<div class="card ok-card" style="margin-top:8px"><h3>Datas salvas ✓</h3><p class="sub">De ${ddaaaa(i)} até a revisão em ${ddaaaa(r)}. Para pôr na agenda, me diga no chat: "põe ${esc(primeiro(a.nome))} na agenda".</p></div>`;
+      aviso("Datas salvas ✓"); atualizar();
+    } catch(e){ $("dtOk").disabled = false; $("dtMsg").textContent = e.servidor ? e.message : "Sem internet: nada foi salvo. Tente de novo quando a internet voltar."; }
+    finally { prescEnviando = false; }
+  };
 }
 
 function editarExercicio(a, d, p){
