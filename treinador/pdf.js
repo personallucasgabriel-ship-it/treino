@@ -290,12 +290,21 @@ function acharCorpo(det, img){
   const P = i => [L[i].x * w, L[i].y * h];
   const nariz = P(0), pes = Math.max(...[29, 30, 31, 32].map(i => P(i)[1])), calc = (P(29)[1] + P(30)[1]) / 2;
   const topo = nariz[1] - .10 * (calc - nariz[1]), cx = [11, 12, 23, 24].reduce((s, i) => s + P(i)[0], 0) / 4, span = pes - topo;
-  return span > h * .2 ? {topo, base: pes, cx, span} : null;
+  if (!(span > h * .2)) return null;
+  // rosto (para o Instagram): do nariz para a orelha mais próxima no perfil, centrado no nariz de frente (corpo.py)
+  const orelhas = [P(7), P(8)], orelha = orelhas.reduce((b, o) => Math.abs(o[0] - nariz[0]) < Math.abs(b[0] - nariz[0]) ? o : b);
+  const perfil = Math.abs(orelhas[0][0] - orelhas[1][0]) < .04 * span;
+  const centro = perfil ? [nariz[0] * .75 + orelha[0] * .25, nariz[1] * .75 + orelha[1] * .25] : nariz;
+  return {topo, base: pes, cx, span, rosto: [centro[0], centro[1] - .004 * span, (perfil ? .040 : .042) * span, .052 * span]};
 }
 // quadro larg × alt com o corpo do mesmo tamanho e no mesmo lugar; fora da foto, repete a borda
 function enquadrar(img, ach, larg, alt){
+  const c = enquadrarCanvas(img, ach, larg, alt);
+  return {src: c.toDataURL("image/jpeg", .86), w: larg, h: alt};
+}
+function enquadrarCanvas(img, ach, larg, alt){
   const c = document.createElement("canvas"); c.width = larg; c.height = alt; const g = c.getContext("2d");
-  const w = img.naturalWidth, h = img.naturalHeight, esc = alt * (OCUPA_BASE - OCUPA_TOPO) / ach.span;
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, esc = alt * (OCUPA_BASE - OCUPA_TOPO) / ach.span;
   const x0 = ach.cx - larg / esc / 2, y0 = ach.topo - OCUPA_TOPO * alt / esc;
   const dx = -x0 * esc, dy = -y0 * esc, dw = w * esc, dh = h * esc;
   g.drawImage(img, 0, 0, 1, 1, 0, 0, larg, alt);   // fundo: a cor do canto
@@ -304,7 +313,7 @@ function enquadrar(img, ach, larg, alt){
   if (dy > 0) g.drawImage(img, 0, 0, w, 1, dx, 0, dw, dy);
   if (dy + dh < alt) g.drawImage(img, 0, h - 1, w, 1, dx, dy + dh, dw, alt - dy - dh);
   g.drawImage(img, dx, dy, dw, dh);
-  return {src: c.toDataURL("image/jpeg", .86), w: larg, h: alt};
+  return c;
 }
 function fotoInteira(img){
   const k = Math.min(1, 1100 / Math.max(img.naturalWidth, img.naturalHeight));
@@ -371,3 +380,83 @@ async function pdfFotos(a){
     : "Sem internet para abrir o ajuste das fotos: elas foram inteiras, sem igualar o enquadramento.";
   return arq;
 }
+
+// ---------- 4. antes e depois para o Instagram (pedido do criador, 15/11/2026) ----------
+// Igual ao .claude/skills/treinador/scripts/insta.py: 1080 × 1350 (4:5, feed), uma imagem por ângulo, fundo preto,
+// título do ângulo e "ANTES" / "DEPOIS" em branco, sem datas e sem amarelo, logo em cima, as duas fotos com o corpo do
+// mesmo tamanho e no mesmo lugar e, se pedido, o rosto borrado (nunca na foto de costas). Tudo no celular.
+const IG_L = 1080, IG_A = 1350, IG_M = 24, IG_VAO = 12, IG_TOPO = 118, IG_RODAPE = 120;
+function borrarRosto(img, ach){
+  const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"); g.drawImage(img, 0, 0);
+  const [cx, cy, rx, ry] = ach.rosto, bloco = Math.max(6, rx * .55);
+  const p = document.createElement("canvas"); p.width = Math.max(2, Math.round(w / bloco)); p.height = Math.max(2, Math.round(h / bloco));
+  const pg = p.getContext("2d"); try { pg.filter = `blur(${Math.max(1, Math.round(rx / bloco / 2))}px)`; } catch(e){}
+  pg.drawImage(img, 0, 0, p.width, p.height);
+  g.save(); g.beginPath(); g.ellipse(cx, cy, rx * 1.1, ry * 1.1, 0, 0, 2 * Math.PI); g.clip();
+  g.imageSmoothingEnabled = false; g.drawImage(p, 0, 0, w, h); g.restore();
+  return c;
+}
+async function imagensInstagram(a, borrar){
+  const {lista, antes, depois} = datasFotos(a);
+  if (antes === depois) throw new Error("Escolha duas datas diferentes (Antes e Depois).");
+  const angs = FOTO_ANGULOS.filter(ang => lista.some(f => f.angulo === ang && f.data === antes) && lista.some(f => f.angulo === ang && f.data === depois));
+  if (!angs.length) throw new Error("Nenhum ângulo tem foto nas duas datas escolhidas.");
+  let det; try { det = await detectorPose(); } catch(e){ throw new Error("Sem internet para abrir o ajuste das fotos. Tente de novo com internet."); }
+  try { await document.fonts.load('800 58px "Archivo"'); } catch(e){}
+  const logo = await new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = "../icons/logo-horizontal.svg"; });
+  const larg = Math.floor((IG_L - 2 * IG_M - IG_VAO) / 2), alt = IG_A - IG_TOPO - IG_RODAPE, arqs = [], avisos = [];
+  for (const ang of angs){
+    const fotos = [];
+    for (const dt of [antes, depois]){
+      const f = lista.find(x => x.angulo === ang && x.data === dt), img = await abrirImg(await carregarFoto(a, f.id));
+      const ach = acharCorpo(det, img);
+      if (!ach){ avisos.push(`${ang} (${dt === antes ? "antes" : "depois"})`); fotos.push(enquadrarCanvas(img, {topo: 0, cx: img.naturalWidth / 2, span: img.naturalHeight / (OCUPA_BASE - OCUPA_TOPO) * .9}, larg, alt)); continue; }
+      fotos.push(enquadrarCanvas(borrar && ang !== "Costas" ? borrarRosto(img, ach) : img, ach, larg, alt));
+    }
+    const c = document.createElement("canvas"); c.width = IG_L; c.height = IG_A; const g = c.getContext("2d");
+    g.fillStyle = "#0B0B0B"; g.fillRect(0, 0, IG_L, IG_A);
+    g.fillStyle = "#FAFAFA"; g.fillRect(IG_M, 34, 10, 56);
+    g.font = '800 58px "Archivo", "Arial Narrow", Arial, sans-serif'; g.textBaseline = "top"; g.fillText(ang.toUpperCase(), IG_M + 28, 30);
+    if (logo){ const lw = 380, lh = lw * 120 / 579; g.drawImage(logo, IG_L - IG_M - lw, 12 + (96 - lh) / 2, lw, lh); }
+    const xs = [IG_M, IG_M + larg + IG_VAO];
+    fotos.forEach((f, i) => g.drawImage(f, xs[i], IG_TOPO));
+    g.fillRect(IG_M + larg + IG_VAO / 2 - 1, IG_TOPO, 3, alt);
+    g.font = '800 52px "Archivo", "Arial Narrow", Arial, sans-serif'; g.textAlign = "center";
+    ["ANTES", "DEPOIS"].forEach((t, i) => g.fillText(t, xs[i] + larg / 2, IG_TOPO + alt + 30));
+    const blob = await new Promise(ok => c.toBlob(ok, "image/jpeg", .92));
+    arqs.push(new File([blob], pdfTxt(`Antes e depois ${primeiro(a.nome)} ${ang}`).replace(/[\\/:*?"<>|]/g, "-") + ".jpg", {type: "image/jpeg"}));
+  }
+  arqs.aviso = avisos.length ? `Não achei o corpo inteiro em: ${avisos.join(", ")}. Essa foto foi sem igualar o enquadramento${borrar ? " e sem borrar o rosto" : ""}: confira antes de postar.` : "";
+  return arqs;
+}
+// imagens prontas: ver, mandar todas juntas (carrossel no Instagram) ou baixar uma a uma
+function entregarImagens(arqs){
+  const urls = arqs.map(f => URL.createObjectURL(f));
+  const podeMandar = !!(navigator.canShare && (() => { try { return navigator.canShare({files: arqs}); } catch(e){ return false; } })());
+  const f = document.createElement("div"); f.className = "pdf-pronto"; f.setAttribute("role", "dialog"); f.setAttribute("aria-label", "Imagens prontas");
+  f.innerHTML = `<div class="card"><h3>Antes e depois para o Instagram</h3><p class="sub">${plural(arqs.length, "imagem", "imagens")} 4:5 para o feed${arqs.length > 1 ? " (carrossel)" : ""}. Confira o rosto antes de postar.</p>
+    <div class="ig-lista">${urls.map((u, i) => `<a href="${u}" download="${esc(arqs[i].name)}"><img src="${u}" alt="${esc(arqs[i].name)}"></a>`).join("")}</div>
+    <div class="acoes">${podeMandar ? `<button class="btn amarelo" type="button" id="igMandar">Mandar (Instagram…)</button>` : ""}
+    <button class="btn${podeMandar ? "" : " amarelo"}" type="button" id="igBaixar">Baixar ${arqs.length > 1 ? "todas" : ""}</button>
+    <button class="btn" type="button" id="igFechar">Fechar</button></div><p class="sub" id="igMsg">${esc(arqs.aviso || "")}</p></div>`;
+  const fechar = () => { f.remove(); setTimeout(() => urls.forEach(u => URL.revokeObjectURL(u)), 60000); };
+  f.onclick = e => { if (e.target === f) fechar(); };
+  document.body.appendChild(f);
+  f.querySelector("#igFechar").onclick = fechar;
+  f.querySelector("#igBaixar").onclick = () => urls.forEach((u, i) => setTimeout(() => { const l = document.createElement("a"); l.href = u; l.download = arqs[i].name; document.body.appendChild(l); l.click(); l.remove(); }, i * 400));
+  if (podeMandar) f.querySelector("#igMandar").onclick = async () => {
+    try { await navigator.share({files: arqs}); }
+    catch(e){ if (e && e.name !== "AbortError") f.querySelector("#igMsg").textContent = "Não abriu o compartilhar. Use Baixar e poste pela galeria."; }
+  };
+}
+function botaoInstagram(bt, a){
+  if (!bt) return;
+  bt.onclick = async () => {
+    const t = bt.textContent; bt.disabled = true; bt.textContent = "Montando as imagens…";
+    try { entregarImagens(await imagensInstagram(a, !!$("igBorrar") && $("igBorrar").checked)); }
+    catch(e){ console.error(e); alert((e && e.message) || "Não consegui montar as imagens."); }
+    finally { bt.disabled = false; bt.textContent = t; }
+  };
+}
+

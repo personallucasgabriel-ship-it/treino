@@ -1500,7 +1500,8 @@ function pintarFotos(a){
     <textarea id="fAnalise" class="nota" rows="5" placeholder="Escreva ou cole aqui. Cada parágrafo numa linha; linha começando com ## vira subtítulo.">${esc(ler(chaveAnalise(a, antes, depois)) || "")}</textarea>
     <p class="sub">Textos prontos (toque para pôr no fim):</p><div class="filtros prontos">${TEXTOS_PRONTOS.map(([t], i) => `<button type="button" data-pronto="${i}">+ ${esc(t)}</button>`).join("")}</div>`;
   h += `<p class="sub">Toque numa foto para ver grande. O PDF das fotos sai com as datas escolhidas acima e o mesmo enquadramento nas duas fotos.</p>
-    <div class="acoes"><button class="btn amarelo" type="button" id="pdfFotos">📄 PDF das fotos${mostrar.length > 1 ? " (antes e depois)" : ""}</button>${pasta ? `<a class="btn" href="${esc(pasta)}" target="_blank" rel="noopener">Abrir a pasta</a>` : ""}<button class="btn" type="button" id="fotosDeNovo">Procurar fotos novas</button></div></div></section>`;
+    ${mostrar.length > 1 ? `<label class="sub ig-borrar"><input type="checkbox" id="igBorrar"${ler("t_ig_borrar") === false ? "" : " checked"}> Borrar o rosto nas imagens do Instagram (a foto de costas fica sem borrão)</label>` : ""}
+    <div class="acoes"><button class="btn amarelo" type="button" id="pdfFotos">📄 PDF das fotos${mostrar.length > 1 ? " (antes e depois)" : ""}</button>${mostrar.length > 1 ? `<button class="btn amarelo" type="button" id="igFotos">📸 Antes e depois para o Instagram</button>` : ""}${pasta ? `<a class="btn" href="${esc(pasta)}" target="_blank" rel="noopener">Abrir a pasta</a>` : ""}<button class="btn" type="button" id="fotosDeNovo">Procurar fotos novas</button></div></div></section>`;
   // análise das fotos: os PDFs aprovados que estão na pasta "Avaliações <Nome>" (skill treinador, 9.9; servidor versão 14)
   if (!PDFS_AV[a.chave]) PDFS_AV[a.chave] = ler("t_pdfs:" + a.chave);
   const pdfs = PDFS_AV[a.chave];
@@ -1512,6 +1513,8 @@ function pintarFotos(a){
   el.innerHTML = h;
   $("olhoFotos").onclick = () => { guardar("t_ocultar_fotos", !fOcultas); pintarFotos(a); };
   botaoPdf($("pdfFotos"), () => pdfFotos(a));
+  botaoInstagram($("igFotos"), a);
+  if ($("igBorrar")) $("igBorrar").onchange = e => guardar("t_ig_borrar", e.target.checked);
   $("fAnalise").oninput = e => guardar(chaveAnalise(a, antes, depois), e.target.value);
   el.querySelectorAll("[data-pronto]").forEach(b => b.onclick = () => {
     const ta = $("fAnalise"), novo = TEXTOS_PRONTOS[b.dataset.pronto][1].replace("{antes}", rotData(antes)).replace("{depois}", rotData(depois));
