@@ -169,7 +169,7 @@ function telaSemChave(){
 const MSG = {
   conversa: a => `Oi, ${primeiro(a.nome)}! `,
   // "Treino chegou: app", com o link do app DESTE aluno (planilha de acessos; servidor versão 5)
-  treino: a => `${primeiro(a.nome)}, seu treino chegou! 🎉\n\nEle fica no seu app de treino, feito só pra você:\n${a.app}\n\nAbre no celular e coloca na tela inicial (o próprio app mostra como): ele fica com a minha logo e funciona até sem internet na academia.\n\nEm cada dia de treino, o app mostra os exercícios, o que você fez da última vez e o cronômetro de descanso. Anota as repetições e a carga de cada série: tudo chega direto pra mim, não precisa me mandar nada 😉\n\nNo fim do treino do dia, em *Ver o planejamento do ciclo*, você vê o seu ciclo completo, pra saber o caminho até o fim.\n\nE o mais importante: grava os exercícios *de lado ou de costas* e me manda aqui, principalmente os novos e quando a carga subir. É assim que eu corrijo a sua execução pra você não treinar errado 💪`,
+  treino: a => `${primeiro(a.nome)}, seu treino chegou! 🎉\n\nEle fica no seu app de treino, feito só pra você:\n${a.app}\n\nAbre no celular e coloca na tela inicial (o próprio app mostra como): ele fica com a minha logo e funciona até sem internet na academia.\n\nEm cada dia de treino, o app mostra os exercícios, o que você fez da última vez e o cronômetro de descanso. Anota as repetições e a carga de cada série: tudo chega direto pra mim, não precisa me mandar nada 😉\n\nE o mais importante: grava os exercícios *de lado ou de costas* e me manda aqui, principalmente os novos e quando a carga subir. É assim que eu corrijo a sua execução pra você não treinar errado 💪`,
   registro: (a, N) => `Oi, ${primeiro(a.nome)}! Como está sendo a semana de treino? 💪\n\nVi que faltam treinos anotados no app esta semana. Se você já treinou, anota lá as repetições e as cargas de cada série, tá? É com elas que eu acompanho a sua evolução e ajusto o seu treino 🙂`,
   fotos: a => `Oi, ${primeiro(a.nome)}! Chegou o dia da sua reavaliação 📸\n\nÉ tudo pelo mesmo formulário:\n• as 4 fotos (lembra do Guia de fotos: mesmo lugar, mesma luz e mesmo horário)\n• o feedback do mês, que leva uns 2 minutinhos\n\n${FORM_FOTOS}\n\nMe manda até sábado, que no domingo te envio o seu relatório de evolução 📈`,
   // umas 2 semanas antes do fim do plano; depois do fim, o lembrete curto
@@ -366,12 +366,33 @@ function resumoAluno(a){
   if (rec.length) h += `<section class="secao"><header><h2>Recordes</h2><span class="cont">últimas 4 semanas</span></header><div class="card">${rec.slice().reverse().map(x =>
       `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>🏆 ${esc(x.texto || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
   if (a.lido_planilha_erro) h += `<p class="sub">${esc(a.lido_planilha_erro)}</p>`;
+  h += `<section class="secao" id="inatSecao"><header><h2>Aluno parou?</h2></header><div class="card">
+    <p class="sub">Leva a pasta para Inativos, o contrato para Contratos Inativos e desliga o app do aluno. Nada é apagado: se ele voltar, me diga no chat "${esc(primeiro(a.nome))} voltou".</p>
+    <p class="sub" id="inatMsg"></p><div class="acoes"><button class="btn" type="button" id="inativar">Inativar aluno</button></div></div></section>`;
   $("corpo").innerHTML = h;
+  $("inativar").onclick = () => inativarAluno(a);
   $("salvarAnot").onclick = async () => {
     const t = $("anot").value; $("anotMsg").textContent = "Salvando…";
     try { await chamar({acao: "t_nota", aluno: a.chave, nome: a.nome, texto: t}); a.anotacao = t; guardar("t_inicio", INICIO); $("anotMsg").textContent = "Salvo ✓"; }
     catch(e){ $("anotMsg").textContent = e.servidor ? "Não salvou: " + e.message : "Sem internet: não salvou. Tente de novo com sinal."; }
   };
+}
+
+// ---------- inativar aluno (servidor versão 13; skill estagiario, 3.2 e 3.5) ----------
+async function inativarAluno(a){
+  const msg = $("inatMsg"), btn = $("inativar");
+  if (((INICIO && INICIO.versao) || 0) < 13){ msg.textContent = "Para isto, cole o código novo do servidor (página Ligar o app do treinador, versão 13) e toque em ↻."; return; }
+  if (!confirm(`Inativar ${a.nome}? A pasta vai para Inativos, o contrato para Contratos Inativos e o app do aluno deixa de abrir. Nada é apagado.`)) return;
+  btn.disabled = true; msg.textContent = "Inativando…";
+  try {
+    const j = await chamar({acao: "t_inativar", aluno: a.chave, nome: a.nome}, 60000);
+    INICIO.alunos = (INICIO.alunos || []).filter(x => x.chave !== a.chave); guardar("t_inicio", INICIO);
+    delete DADOS[a.chave]; try { localStorage.removeItem("t_aluno:" + a.chave); } catch(e){}
+    $("inatSecao").innerHTML = `<div class="card ok-card"><h3>${esc(primeiro(a.nome))} está inativo ✓</h3>
+      ${(j.feito || []).map(t => `<p class="sub">✓ ${esc(t)}</p>`).join("")}${(j.avisos || []).map(t => `<p class="sub">⚠ ${esc(t)}</p>`).join("")}
+      <p class="sub">As tarefas dele na agenda saem na faxina de domingo (ou me diga no chat "tira o ${esc(primeiro(a.nome))} da agenda"). Se o plano ainda não acabou e houve reembolso, anote no Financeiro.</p>
+      <div class="acoes"><a class="btn amarelo" href="#/alunos">Voltar para os alunos</a></div></div>`;
+  } catch(e){ btn.disabled = false; msg.textContent = e.servidor ? "Não inativou: " + e.message : "Sem internet: nada mudou. Tente de novo com sinal."; }
 }
 
 async function carregarAluno(a, depois){
