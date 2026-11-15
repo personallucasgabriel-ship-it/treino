@@ -233,12 +233,28 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
 .como summary{cursor:pointer;color:var(--amarelo);font-weight:600;font-size:14px}
 .como p{margin-top:8px}
 @media (prefers-reduced-motion:no-preference){.ex{transition:border-color .2s}.dia{transition:background .15s}}
+/* avisos (sininho e caixa de avisos; servidor versão 17) */
+.marca{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sino{position:relative;flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:1px solid var(--linha);background:var(--carvao);font-size:20px;display:grid;place-items:center}
+.sino b{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--amarelo);color:var(--preto);font-size:12px;line-height:20px;font-weight:800}
+.av-folha{max-height:85vh;overflow:auto}
+.av-cfg{display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--linha);padding-bottom:14px}
+.av-ok{margin:0;font-weight:700;color:var(--verde)}
+.av-linha{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px}
+.av-linha select{font:inherit;color:var(--branco);background:var(--preto);border:1px solid var(--linha);border-radius:10px;padding:8px 10px;min-height:40px}
+.av-linha input[type=checkbox]{width:24px;height:24px;accent-color:var(--amarelo)}
+.av-lista{display:flex;flex-direction:column;gap:8px}
+.av-item{border:1px solid var(--linha);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+.av-item.novo{border-left:4px solid var(--amarelo)}
+.av-item small{font-size:12px;color:var(--cinza)}
+.av-item p{margin:0;font-size:14px;color:#D9D8D2}
+.aviso-card .av-linha select{flex:0 0 auto}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="marca"><img src="icons/logo-horizontal.svg" alt="Lucas Gabriel · Treinador" width="193" height="40"></div>
+    <div class="marca"><img src="icons/logo-horizontal.svg" alt="Lucas Gabriel · Treinador" width="193" height="40"><button type="button" class="sino" id="sino" hidden aria-label="Avisos" onclick="abrirAvisos()"><span aria-hidden="true">🔔</span><b id="sinoN" hidden></b></button></div>
     <h1 id="nome">Treino da semana</h1>
     <div class="meta" id="meta" hidden>
       <span class="pill semnav"><button type="button" id="semAnt" aria-label="Semana anterior">‹</button>Semana <b id="semana"></b><small id="datas"></small><button type="button" id="semProx" aria-label="Próxima semana">›</button></span>

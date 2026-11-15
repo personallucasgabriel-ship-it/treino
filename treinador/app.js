@@ -154,6 +154,7 @@ function render(rolar){
   else if (r.tela === "a") telaAluno(r.chave, r.aba);
   else if (r.tela === "fin") telaFin();
   else if (r.tela === "leads") telaLeads();
+  else if (r.tela === "avisos") telaAvisos();
   else telaHoje();
   if (rolar) window.scrollTo({top: 0});
 }
@@ -214,6 +215,7 @@ function linhaAluno(a, direita){
 function telaHoje(){
   const hoje = hojeZero(), d = SEMANA_JS[hoje.getDay()], alunos = INICIO.alunos || [];
   let h = `<div><div class="eyebrow">${NOMES[d]}, ${ddaaaa(hoje)}</div><h1>Hoje</h1></div>`;
+  h += cartaoAvisosHoje(alunos);
 
   // presencial que treina hoje
   const treinam = alunos.filter(a => a.modalidade === "presencial" && a.resumo && a.resumo.periodo && a.resumo.periodo[d]).filter(a => { const c = ciclo(a); return c.entrega && hoje >= c.entrega && (!c.revisao || hoje < c.revisao); });
@@ -375,11 +377,13 @@ function resumoAluno(a){
         : `Para o aluno que quis a sugestão alimentar e não tem nutricionista. Antes, monte e aprove o cardápio comigo no chat ("monta a dieta de ${esc(primeiro(a.nome))}").${a.nutri ? "" : " A anamnese não diz se ele tem nutricionista: confira antes."}`}</p>
       <p class="sub" id="dietaMsg"></p>${tem ? "" : `<div class="acoes"><button class="btn${a.dieta_app ? "" : " amarelo"}" type="button" id="dietaApp">${a.dieta_app ? "Tirar do app do aluno" : "Mostrar no app do aluno"}</button></div>`}</div></section>`;
   }
+  if (a.app && (INICIO.versao || 0) >= 17) h += secaoAvisoAluno(a);
   h += `<section class="secao" id="inatSecao"><header><h2>Aluno parou?</h2></header><div class="card">
     <p class="sub">Leva a pasta para Inativos, o contrato para Contratos Inativos e desliga o app do aluno. Nada é apagado: se ele voltar, me diga no chat "${esc(primeiro(a.nome))} voltou".</p>
     <p class="sub" id="inatMsg"></p><div class="acoes"><button class="btn" type="button" id="inativar">Inativar aluno</button></div></div></section>`;
   $("corpo").innerHTML = h;
   $("inativar").onclick = () => inativarAluno(a);
+  ligarFormAviso("avA", t => ({acao: "t_aviso", aluno: a.chave, ...t}), j => j.depois ? "Guardado ✓ Sai às 7h (de noite, nada vai para o celular)." : j.aparelhos ? `Mandado ✓ Chegou em ${plural(j.aparelhos, "celular")}.` : `Guardado ✓ ${primeiro(a.nome)} não ligou os avisos no celular: vê no 🔔 quando abrir o app.`);
   if ($("dietaApp")) $("dietaApp").onclick = async () => {
     const ligar = !a.dieta_app, b = $("dietaApp"); b.disabled = true; $("dietaMsg").textContent = ligar ? "Conferindo o cardápio…" : "Tirando…";
     try { await chamar({acao: "t_dieta_app", aluno: a.chave, ligar}, 60000); a.dieta_app = ligar; guardar("t_inicio", INICIO); resumoAluno(a); }
@@ -1801,3 +1805,83 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 
 render(false);
 if (CHAVE){ if (INICIO) mostrarStatus(Object.keys(FILA).length ? "local" : "ok"); atualizar(); }
+
+// ---------- AVISOS no celular dos alunos (servidor versão 17; pedido do criador, 15/11/2026) ----------
+// Os automáticos começam desligados: o criador lê cada texto e liga (é o ok dele). Regras no servidor (Avisos.gs).
+const AV_INFO = [
+  ["treino", "Lembrete do treino", "Nos dias de treino, na hora que o aluno escolheu no app, só se ele ainda não anotou o treino do dia.", "Hoje é dia de Treino B 💪", "Maria, o seu treino já está no app. Bora?"],
+  ["ciclo", "Ciclo novo", "No primeiro dia do ciclo (a data de entrega).", "Seu treino novo começa hoje 🔥", "Hoje é Treino A. Bom ciclo, Maria!"],
+  ["sumiu", "Sumiu do treino", "4 dias ou mais sem treino anotado e 2 treinos perdidos. Repete só depois de 7 dias.", "Bora voltar pro treino?", "Faz 5 dias sem treino anotado. Treinou? Anota no app. Precisou parar? Me chama no WhatsApp."],
+  ["fotos", "Fotos de avaliação", "Nas semanas 4, 8, 12 e na última: quinta e sábado, se o formulário ainda não chegou.", "Semana das fotos de avaliação 📸", "Mande as 4 fotos e o feedback do mês até sábado. No domingo sai o seu relatório de evolução."],
+  ["renovacao", "Renovação", "Só consultoria (aba Alunos do Financeiro): 7 dias antes do fim do plano e na véspera. Só a data, sem pressão.", "Seu plano vai até 23/11", "Seu plano trimestral vai até domingo, 23/11. Para seguir sem pausa, a renovação está no app."],
+  ["semana", "Resumo da semana", "Domingo, 18h, para quem treinou na semana (o aluno pode desligar no app).", "Sua semana: 3 de 4 treinos", "2 recordes nesta semana 🏆 Segunda tem Treino A. Bora!"],
+  ["dica", "Dica nova", "Quando você grava uma dica no Registrar. De noite (21h às 7h), sai às 7h.", "Dica nova no seu treino", "Supino reto: desce em 3 segundos e segura 1 embaixo."]];
+const AV_PRONTOS = [
+  ["Treino atualizado", "Seu treino foi atualizado", "Dei uma ajustada no seu treino. Confere no app antes do próximo."],
+  ["Análise das fotos", "Sua análise das fotos saiu 📈", "Mandei a análise da sua evolução no WhatsApp. Dá uma olhada!"],
+  ["Relatório de evolução", "Seu relatório de evolução saiu 📈", "Mandei o relatório das suas últimas semanas no WhatsApp. Dá uma olhada!"],
+  ["Recado livre", "", ""]];
+let AVS = null, avsLendo = false;
+function cartaoAvisosHoje(alunos){
+  if ((INICIO.versao || 0) < 17) return "";
+  const com = alunos.filter(a => a.avisos > 0).length, ligados = AV_INFO.filter(([k]) => (INICIO.avisos_cfg || {})[k]).length;
+  return `<a class="card avcard" href="#/avisos"><span aria-hidden="true">🔔</span><span><b>Avisos no celular</b><small>${plural(com, "aluno")} com os avisos ligados · ${ligados} de ${AV_INFO.length} automáticos ligados</small></span><span aria-hidden="true">›</span></a>`;
+}
+function formAviso(id){
+  return `<div class="card form"><div><span class="rot">Pronto para usar</span><div class="filtros" role="group" id="${id}P">${AV_PRONTOS.map(([n], i) => `<button type="button" data-i="${i}" aria-pressed="false">${n}</button>`).join("")}</div></div>
+    <label>Título<input class="busca" id="${id}T" maxlength="80" placeholder="Ex.: Academia fechada no feriado"></label>
+    <label>Texto<textarea class="nota" id="${id}X" maxlength="240" placeholder="Curto, como uma mensagem de WhatsApp."></textarea></label>
+    <p class="sub" id="${id}M"></p><div class="acoes"><button class="btn amarelo" type="button" id="${id}Ok">Mandar aviso</button></div></div>`;
+}
+function ligarFormAviso(id, pedido, feito, confirmar){
+  if (!$(id + "Ok")) return;
+  document.querySelectorAll(`#${id}P button`).forEach(b => b.onclick = () => { const [, t, x] = AV_PRONTOS[+b.dataset.i];
+    document.querySelectorAll(`#${id}P button`).forEach(y => y.setAttribute("aria-pressed", String(y === b))); $(id + "T").value = t; $(id + "X").value = x; (t ? $(id + "X") : $(id + "T")).focus(); });
+  $(id + "Ok").onclick = async () => {
+    const t = {titulo: txt($(id + "T").value), texto: txt($(id + "X").value)}, msg = $(id + "M");
+    if (!t.titulo || !t.texto){ msg.textContent = "Escreva o título e o texto."; return; }
+    if (confirmar && !confirm(confirmar)) return;
+    $(id + "Ok").disabled = true; msg.textContent = "Mandando…";
+    try { const j = await chamar(pedido(t), 120000); msg.textContent = feito(j); $(id + "T").value = ""; $(id + "X").value = ""; AVS = null; }
+    catch(e){ msg.textContent = e.servidor ? "Não mandou: " + e.message : "Sem internet: nada foi mandado."; }
+    finally { $(id + "Ok").disabled = false; }
+  };
+}
+function secaoAvisoAluno(a){
+  return `<section class="secao"><header><h2>Mandar aviso</h2><span class="cont">${a.avisos ? `🔔 ligado em ${plural(a.avisos, "celular")}` : "avisos não ligados"}</span></header>
+    <p class="sub">${a.avisos ? `Chega no celular de ${esc(primeiro(a.nome))} e fica no 🔔 do app.` : `${esc(primeiro(a.nome))} ainda não ligou os avisos no celular (no app dele: 🔔 › Ativar avisos). O aviso fica no 🔔 e aparece quando ele abrir o app.`}</p>
+    ${formAviso("avA")}</section>`;
+}
+async function lerAvisos(){
+  if (avsLendo) return; avsLendo = true;
+  try { AVS = await chamar({acao: "t_avisos"}, 60000); INICIO.avisos_cfg = AVS.cfg; guardar("t_inicio", INICIO); }
+  catch(e){ AVS = {erro: e.servidor ? e.message : "Sem internet: não consegui ler os avisos."}; }
+  finally { avsLendo = false; }
+  if (rota().tela === "avisos") telaAvisos();
+}
+function telaAvisos(){
+  let h = `<div><div class="eyebrow">No celular dos alunos</div><h1>Avisos</h1></div>`;
+  if ((INICIO.versao || 0) < 17){ $("tela").innerHTML = h + `<p class="vazio">Para os avisos, cole o código novo do servidor (página Ligar o app do treinador, versão 17).</p>`; return; }
+  if (!AVS){ $("tela").innerHTML = h + `<p class="carregando">Lendo os avisos…</p>`; lerAvisos(); return; }
+  if (AVS.erro){ $("tela").innerHTML = h + `<p class="vazio">${esc(AVS.erro)}</p><div class="acoes"><button class="btn" type="button" id="avDeNovo">Tentar de novo</button></div>`; $("avDeNovo").onclick = () => { AVS = null; telaAvisos(); }; return; }
+  const cfg = AVS.cfg || {};
+  h += `<p class="sub">Cada aluno liga no app dele (🔔 › Ativar avisos) e escolhe a hora do lembrete. No máximo 1 aviso automático por dia por aluno, nada entre 21h e 6h, e o aviso fica também no 🔔 do app. Leia cada texto e ligue só os que quiser.</p>`;
+  if (AVS.gatilho === false) h += `<div class="card alerta"><b>Falta o despertador dos avisos</b><p class="sub">${AVS.erroGatilho ? esc(AVS.erroGatilho) + " · " : ""}Sem ele, só os avisos que você manda saem. Faça o passo "Ligue o despertador dos avisos" da página Ligar o app do treinador.</p></div>`;
+  h += `<section class="secao"><header><h2>Automáticos</h2><span class="cont">${AV_INFO.filter(([k]) => cfg[k]).length} de ${AV_INFO.length} ligados</span></header><div class="lista">${AV_INFO.map(([k, nome, quando, tit, tx]) =>
+    `<div class="card avtipo${cfg[k] ? " on" : ""}"><div class="avtopo"><b>${nome}</b><button type="button" class="btn${cfg[k] ? " amarelo" : ""}" data-av="${k}" aria-pressed="${!!cfg[k]}">${cfg[k] ? "Ligado ✓" : "Ligar"}</button></div>
+      <p class="sub">${quando}</p><div class="avex"><small>Exemplo</small><b>${esc(tit)}</b><span>${esc(tx)}</span></div></div>`).join("")}</div><p class="sub" id="avCfgMsg"></p></section>`;
+  h += `<section class="secao"><header><h2>Mandar para todos</h2><span class="cont">alunos com o app</span></header>${formAviso("avT")}</section>`;
+  const al = AVS.alunos || [];
+  h += `<section class="secao"><header><h2>Ligaram os avisos</h2><span class="cont">${plural(al.length, "aluno")}</span></header>${al.length ? `<div class="card">${al.sort((x, y) => x.nome.localeCompare(y.nome)).map(x =>
+    `<div class="recado"><small>${x.hora == null ? "sem lembrete do treino" : `lembrete às ${x.hora}h`}${x.resumo ? " · resumo do domingo" : ""}${x.n > 1 ? ` · ${x.n} celulares` : ""}</small>${esc(x.nome)}</div>`).join("")}</div>` : `<p class="vazio">Nenhum aluno ligou ainda. No app, o convite aparece depois que ele anota o primeiro treino (ou no 🔔).</p>`}</section>`;
+  const env = AVS.enviados || [];
+  if (env.length) h += `<section class="secao"><header><h2>Últimos avisos</h2></header><div class="card">${env.map(x => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(x.quando) || [];
+    return `<div class="recado"><small>${m[3]}/${m[2]} ${m[4] || ""} · ${esc(primeiro(x.nome))} · ${x.entregue ? esc(x.entregue.replace(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} ?/, "")) || "entregue" : "esperando as 7h"}</small><b>${esc(x.titulo)}</b> ${esc(x.texto)}</div>`; }).join("")}</div></section>`;
+  $("tela").innerHTML = h;
+  document.querySelectorAll("[data-av]").forEach(b => b.onclick = async () => {
+    const k = b.dataset.av, novo = !cfg[k]; b.disabled = true; $("avCfgMsg").textContent = "Salvando…";
+    try { const j = await chamar({acao: "t_avisos_cfg", cfg: {[k]: novo}}, 60000); AVS.cfg = j.cfg; AVS.gatilho = j.gatilho; AVS.erroGatilho = j.erroGatilho; INICIO.avisos_cfg = j.cfg; guardar("t_inicio", INICIO); telaAvisos(); }
+    catch(e){ b.disabled = false; $("avCfgMsg").textContent = e.servidor ? "Não salvou: " + e.message : "Sem internet: não salvou."; }
+  });
+  ligarFormAviso("avT", t => ({acao: "t_aviso_todos", ...t}), j => `${j.depois ? "Guardado ✓ Sai às 7h." : "Mandado ✓"} ${plural(j.alunos, "aluno")}, ${plural(j.aparelhos, "celular")} com os avisos ligados.`, "Mandar este aviso para TODOS os alunos com o app?");
+}

@@ -409,9 +409,10 @@ function avisos(){
       h += card("Hoje é dia de descanso", p ? `Próximo treino: ${NOMES[p.dia].toLowerCase()}${p.treino ? `, Treino ${p.treino}` : ", cardio"}.` : "Seu próximo treino é na semana que vem.", "ok"); }
     else if (diaFeito(i)) h += card("Treino de hoje feito ✓", "Tudo anotado. Bom descanso!", "ok");
   }
-  h += cardRenovar(hoje) + cardFotos(hoje, wHoje) + cardFimCiclo(hoje);
-  h += cardInstalar();
+  h = cardRecadoTreinador() + h + cardRenovar(hoje) + cardFotos(hoje, wHoje) + cardFimCiclo(hoje);
+  const inst = cardInstalar(); h += inst + (inst ? "" : cardAtivarAvisos());   // um pedido de cada vez
   box.innerHTML = h;
+  ligarCardsAvisos();
   const nr = $("naoRenovar"); if (nr) nr.onclick = () => { guardar("renovar-depois:" + CODIGO, Date.now()); avisos(); };
   checarConquistas();
   const bi = $("instalar"); if (bi) bi.onclick = instalarAndroid;
@@ -1023,6 +1024,140 @@ function cardRenovar(hoje){
     <div class="acoes"><a class="btn" href="${zap}" target="_blank" rel="noopener">Pagar no Pix (falar com o Lucas)</a>${n > 0 ? `<button class="btn" type="button" id="naoRenovar">Depois</button>` : ""}</div></div>`;
 }
 
+// ---------- avisos no celular (servidor versão 17; pedido do criador, 15/11/2026) ----------
+// O servidor guarda cada aviso na caixa do aluno (o sininho) e acorda o celular (Web Push, sw.js). Sem os avisos ligados,
+// o aluno vê a caixa quando abre o app. No iPhone, só funciona com o app na tela de início.
+const K_VISTO = "avisos-visto:" + CODIGO, K_AVCEL = "avisos-cel:" + CODIGO, K_AVDEPOIS = "avisos-depois:" + CODIGO;
+const HORAS_LEMBRETE = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
+let AVISOS = [], AV_CHAVE = "", avConferido = false;
+const suportaAvisos = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const ehIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function estadoAvisos(){
+  if (!AV_CHAVE) return "servidor";
+  if (ehIos() && !instalado()) return "ios";
+  if (!suportaAvisos()) return "sem";
+  if (Notification.permission === "denied") return "bloqueado";
+  return Notification.permission === "granted" && ler(K_AVCEL) ? "ligado" : "desligado";
+}
+const naoLidos = () => { const v = ler(K_VISTO) || ""; return AVISOS.filter(x => String(x.id) > v); };
+function pintarSino(){
+  const b = $("sino"); if (!b) return; b.hidden = !P || (!AV_CHAVE && !AVISOS.length);   // servidor antes da versão 17: sem sininho
+  const n = naoLidos().length, el = $("sinoN"); el.hidden = !n; el.textContent = n > 9 ? "9+" : String(n);
+  b.setAttribute("aria-label", n ? `Avisos: ${n} ${n === 1 ? "novo" : "novos"}` : "Avisos");
+}
+function receberAvisos(raw){
+  if (Array.isArray(raw.avisos)) AVISOS = raw.avisos;
+  if (raw.avisos_chave) AV_CHAVE = raw.avisos_chave;
+  pintarSino(); guardarCfgSW(); conferirInscricao();
+}
+async function guardarCfgSW(extra){ // o sw.js lê daqui o código do aluno para buscar o aviso (o localStorage não chega lá)
+  if (!("caches" in window) || window.__API_MOCK) return;
+  try { const c = await caches.open("cfg-avisos"), r = await c.match("cfg"), velho = r ? await r.json() : {};
+    const cel = ler(K_AVCEL);
+    await c.put("cfg", new Response(JSON.stringify({...velho, codigo: CODIGO, api: API, chave: AV_CHAVE, ligado: !!cel, hora: cel ? cel.hora : null, resumo: cel ? cel.resumo : true, ...(extra || {})}))); } catch(e){}
+}
+function chaveBytes(b64){ const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64.length + 3) % 4)); return Uint8Array.from(s, c => c.charCodeAt(0)); }
+function mesmaChave(buf, u8){ try { const a = new Uint8Array(buf); return a.length === u8.length && a.every((v, i) => v === u8[i]); } catch(e){ return false; } }
+async function inscrever(){
+  const reg = await navigator.serviceWorker.ready, k = chaveBytes(AV_CHAVE);
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && sub.options && sub.options.applicationServerKey && !mesmaChave(sub.options.applicationServerKey, k)){ await sub.unsubscribe(); sub = null; }
+  return sub || reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: k});
+}
+async function ligarAvisosCel(hora, resumo){
+  const perm = await Notification.requestPermission();   // tem que ser a 1ª coisa do toque (o iPhone exige)
+  if (perm !== "granted") { const e = new Error(perm === "denied" ? "bloqueado" : "cancelado"); e.perm = perm; throw e; }
+  const sub = await inscrever();
+  await chamar({acao: "avisos_ligar", codigo: CODIGO, sub: sub.toJSON(), hora, resumo});
+  guardar(K_AVCEL, {endpoint: sub.endpoint, hora, resumo}); guardarCfgSW();
+}
+async function desligarAvisosCel(){
+  const cel = ler(K_AVCEL);
+  try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch(e){}
+  try { localStorage.removeItem(K_AVCEL); } catch(e){}
+  guardarCfgSW({ligado: false});
+  if (cel) await chamar({acao: "avisos_desligar", codigo: CODIGO, endpoint: cel.endpoint});
+}
+async function conferirInscricao(){ // o celular trocou o endereço dos avisos (acontece): manda o novo
+  if (avConferido || estadoAvisos() !== "ligado" || window.__API_MOCK) return; avConferido = true;
+  try { const cel = ler(K_AVCEL), sub = await inscrever();
+    if (sub.endpoint !== cel.endpoint){ await chamar({acao: "avisos_ligar", codigo: CODIGO, sub: sub.toJSON(), hora: cel.hora, resumo: cel.resumo}); guardar(K_AVCEL, {...cel, endpoint: sub.endpoint}); } } catch(e){}
+}
+function erroAvisos(e){
+  if (e.perm === "denied") return "O celular bloqueou os avisos deste app. Para ligar, libere nas configurações de notificações do celular.";
+  if (e.perm) return "Os avisos não foram ligados.";
+  return e.servidor ? "Não consegui ligar: " + e.message : "Sem internet: tente de novo com sinal.";
+}
+const opcoesHora = sel => `<option value="">Não quero lembrete</option>` + HORAS_LEMBRETE.map(h => `<option value="${h}"${h === sel ? " selected" : ""}>Às ${h}h</option>`).join("");
+const quandoAviso = q => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(q || ""); return m ? `${m[3]}/${m[2]} · ${m[4]}:${m[5]}` : ""; };
+function abrirAvisos(){
+  fecharPse();
+  const novos = new Set(naoLidos().map(x => x.id)), est = estadoAvisos(), cel = ler(K_AVCEL) || {};
+  if (AVISOS.length) guardar(K_VISTO, String(AVISOS[0].id));
+  try { navigator.clearAppBadge && navigator.clearAppBadge(); } catch(e){}
+  pintarSino();
+  let cfg = "";
+  if (est === "ligado") cfg = `<p class="av-ok">🔔 Avisos ligados neste celular.</p>
+    <label class="av-linha">Lembrete nos dias de treino<select id="avHora">${opcoesHora(cel.hora == null ? null : cel.hora)}</select></label>
+    <label class="av-linha"><span>Resumo da semana (domingo, 18h)</span><input type="checkbox" id="avResumo"${cel.resumo === false ? "" : " checked"}></label>
+    <p class="nota" id="avMsg"></p><button type="button" class="btn" id="avDesligar">Desligar os avisos</button>`;
+  else if (est === "desligado") cfg = `<p class="nota">Ligue para receber no celular: o lembrete nos dias de treino, as dicas do seu treinador, a semana das fotos e o fim do plano. No máximo 1 aviso automático por dia, e nada de madrugada.</p>
+    <label class="av-linha">Lembrete nos dias de treino<select id="avHora">${opcoesHora(8)}</select></label>
+    <p class="nota" id="avMsg"></p><button type="button" class="btn amarelo" id="avLigar">Ativar avisos</button>`;
+  else if (est === "bloqueado") cfg = `<p class="nota">Os avisos estão bloqueados para este app no celular. ${ehIos() ? "Para ligar: Ajustes › Notificações › Treino › Permitir Notificações." : "Para ligar: segure o ícone do app › Informações do app › Notificações › Permitir."} Depois, volte aqui.</p>`;
+  else if (est === "ios") cfg = `<p class="nota">No iPhone, os avisos só funcionam com o app na tela de início: no Safari, toque em <b>Compartilhar</b> › <b>Adicionar à Tela de Início</b>, abra o app por lá e volte aqui no 🔔.</p>`;
+  else if (est === "sem") cfg = `<p class="nota">Este navegador não recebe avisos. Eles aparecem aqui sempre que você abrir o app.</p>`;
+  const lista = AVISOS.length ? AVISOS.map(x => `<div class="av-item${novos.has(x.id) ? " novo" : ""}"><small>${esc(quandoAviso(x.quando))}${novos.has(x.id) ? " · novo" : ""}</small><b>${esc(x.titulo)}</b><p>${esc(x.texto)}</p></div>`).join("")
+    : `<p class="nota">Nenhum aviso ainda. Quando o seu treinador mandar um, ele aparece aqui.</p>`;
+  const fundo = document.createElement("div"); fundo.className = "pse-fundo"; fundo.id = "pseFundo";
+  fundo.innerHTML = `<div class="pse-folha av-folha" role="dialog" aria-modal="true" aria-labelledby="avTit">
+    <div class="pse-topo"><div><h3 id="avTit">Avisos</h3><p>Do seu treinador e do app</p></div><button type="button" class="pse-x" aria-label="Fechar">✕</button></div>
+    ${est === "servidor" ? "" : `<div class="av-cfg">${cfg}</div>`}<div class="av-lista">${lista}</div></div>`;
+  document.body.appendChild(fundo);
+  const fechar = () => { fecharPse(); if (location.hash === "#avisos") history.replaceState(null, "", location.pathname + location.search); avisos(); };
+  fundo.onclick = e => { if (e.target === fundo) fechar(); };
+  fundo.querySelector(".pse-x").onclick = fechar;
+  fundo.addEventListener("keydown", e => { if (e.key === "Escape") fechar(); });
+  const msg = t => { const m = $("avMsg"); if (m) m.textContent = t; };
+  const hora = () => { const v = $("avHora").value; return v === "" ? null : Number(v); };
+  if ($("avLigar")) $("avLigar").onclick = async () => { const b = $("avLigar"); b.disabled = true; msg("Ligando…");
+    try { await ligarAvisosCel(hora(), true); abrirAvisos(); aviso("Avisos ligados ✓"); } catch(e){ b.disabled = false; msg(erroAvisos(e)); } };
+  if ($("avDesligar")) $("avDesligar").onclick = async () => { msg("Desligando…"); try { await desligarAvisosCel(); } catch(e){} abrirAvisos(); };
+  const salvarPref = async () => { msg("Salvando…");
+    try { const sub = await inscrever(), r = $("avResumo").checked, hh = hora();
+      await chamar({acao: "avisos_ligar", codigo: CODIGO, sub: sub.toJSON(), hora: hh, resumo: r});
+      guardar(K_AVCEL, {endpoint: sub.endpoint, hora: hh, resumo: r}); guardarCfgSW(); msg("Salvo ✓"); } catch(e){ msg(erroAvisos(e)); } };
+  if (est === "ligado"){ $("avHora").onchange = salvarPref; $("avResumo").onchange = salvarPref; }
+  fundo.querySelector(".pse-x").focus({preventScroll: true});
+}
+// no Treino: o último recado do treinador que o aluno ainda não viu (para quem não ligou os avisos) e o convite para ligar
+function cardRecadoTreinador(){
+  const x = naoLidos().find(a => a.tipo === "treinador" || a.tipo === "dica"); if (!x) return "";
+  return `<div class="aviso-card"><h3>📣 ${esc(x.titulo)}</h3><p>${esc(x.texto)}</p><div class="acoes"><button class="btn" type="button" id="avVer">Ver avisos</button></div></div>`;
+}
+function anotouAlgo(){ return Object.keys(P.reg || {}).some(L => (P.reg[L] || []).some(r => (r || []).slice(1, 11).some(v => txt(v) !== ""))); }
+function cardAtivarAvisos(){
+  if (estadoAvisos() !== "desligado" || Notification.permission !== "default") return "";
+  const depois = ler(K_AVDEPOIS); if (depois && Date.now() - depois < 14*864e5) return "";
+  const primeira = ler("primeira-vez") || Date.now(); if (!ler("primeira-vez")) guardar("primeira-vez", primeira);
+  if (!anotouAlgo() && Date.now() - primeira < 2*864e5) return "";   // pede depois que o aluno viu valor no app
+  return `<div class="aviso-card"><h3>Quer lembrete nos dias de treino? 🔔</h3><p>Eu te aviso no celular nos dias de treino, quando eu deixar uma dica para você e na semana das fotos. No máximo 1 aviso automático por dia.</p>
+    <label class="av-linha">Lembrete<select id="avHoraCard">${opcoesHora(8)}</select></label><p class="nota" id="avMsgCard"></p>
+    <div class="acoes"><button class="btn amarelo" type="button" id="avLigarCard">Ativar avisos</button><button class="btn" type="button" id="avDepois">Agora não</button></div></div>`;
+}
+function ligarCardsAvisos(){
+  if ($("avVer")) $("avVer").onclick = abrirAvisos;
+  if ($("avDepois")) $("avDepois").onclick = () => { guardar(K_AVDEPOIS, Date.now()); avisos(); };
+  if ($("avLigarCard")) $("avLigarCard").onclick = async () => { const b = $("avLigarCard"), v = $("avHoraCard").value; b.disabled = true; $("avMsgCard").textContent = "Ligando…";
+    try { await ligarAvisosCel(v === "" ? null : Number(v), true); aviso(v === "" ? "Avisos ligados ✓" : `Avisos ligados ✓ Lembrete às ${v}h (mude no 🔔)`); avisos(); }
+    catch(e){ b.disabled = false; $("avMsgCard").textContent = erroAvisos(e); } };
+}
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { // toque no aviso com o app aberto
+  const a = e.data && e.data.abrir; if (!a) return;
+  if (P) atualizar();
+  if (a === "avisos") setTimeout(abrirAvisos, 300); else location.hash = "#" + a;
+});
+
 // ---------- abrir ----------
 function erroTela(titulo, texto, botao){
   $("tela").innerHTML = `<div class="msg"><h2>${esc(titulo)}</h2><p>${esc(texto)}</p>${botao ? `<button class="btn amarelo" type="button" id="tentar">${esc(botao)}</button>` : ""}</div>`;
@@ -1034,11 +1169,11 @@ function mostrar(raw, primeira){
   $("meta").hidden = false; $("dias").hidden = false;
   const w = Math.min(12, Math.max(1, semanaDe(hojeZero())));
   montarSemana(primeira ? w : semanaN, !primeira);
-  aplicarAba();
+  aplicarAba(); pintarSino();
 }
 async function atualizar(){
   const guardado = ler(K_DADOS);
-  if (guardado && !P){ mostrar(guardado.raw, true); mostrarStatus(navigator.onLine === false ? "velho" : "atualizando"); }
+  if (guardado && !P){ receberAvisos(guardado.raw); mostrar(guardado.raw, true); mostrarStatus(navigator.onLine === false ? "velho" : "atualizando"); if (location.hash === "#avisos") abrirAvisos(); }
   const g0 = gravacoes;
   try {
     const raw = await chamar({acao: "dados", codigo: CODIGO});
@@ -1046,7 +1181,11 @@ async function atualizar(){
     if (gravacoes !== g0 && P){ setTimeout(atualizar, 500); return; }
     const nova = JSON.stringify([raw.versao, raw.treino, raw.videos, raw.reg, raw.cardio]);
     guardar(K_DADOS, {raw, em: Date.now()});
+    const primeiraVez = !P, novosAntes = naoLidos().length;
+    receberAvisos(raw);
     if (!P) mostrar(raw, true);
+    if (primeiraVez && location.hash === "#avisos") abrirAvisos();
+    else if (P && naoLidos().length !== novosAntes) avisos();
     else if (nova !== assinatura){ const foco = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
       if (foco){ montarDados(raw); precisaRender = true; } else mostrar(raw, false); }
     if (P && (!!raw.dieta !== P.dieta || JSON.stringify(raw.plano || null) !== JSON.stringify(P.plano))){ P.dieta = !!raw.dieta; P.plano = raw.plano || null; avisos(); aplicarAba(); }
@@ -1064,7 +1203,7 @@ window.addEventListener("online", () => { tentativas = 0; enviar(); });
 window.addEventListener("offline", () => mostrarStatus(Object.keys(FILA).length ? "offline" : "velho"));
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") enviarAoSair();
-  else { if (tick) manterTela(true); if (P) atualizar(); }
+  else { if (tick) manterTela(true); if (P) atualizar(); try { if (P && !naoLidos().length && navigator.clearAppBadge) navigator.clearAppBadge(); } catch(e){} }
 });
 window.addEventListener("pagehide", enviarAoSair);
 
