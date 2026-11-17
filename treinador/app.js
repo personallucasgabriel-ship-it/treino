@@ -2002,3 +2002,22 @@ function telaAvisos(){
 // Antes ficava no meio e quebrava a aba Hoje quando o celular já tinha dados guardados (15/11/2026).
 render(false);
 if (CHAVE){ if (INICIO) mostrarStatus(Object.keys(FILA).length ? "local" : "ok"); atualizar(); }
+
+// Instagram do lead (17/11/2026, o criador avisou que o botão não abria o Instagram): no celular, abre direto o
+// aplicativo do Instagram no perfil da pessoa; sem o aplicativo, abre o perfil no navegador. No computador, o link normal.
+document.addEventListener("click", ev => {
+  const a = ev.target.closest && ev.target.closest('a[href^="https://instagram.com/"]');
+  if (!a) return;
+  const u = (/^https:\/\/instagram\.com\/([A-Za-z0-9._]{1,30})/.exec(a.getAttribute("href")) || [])[1];
+  if (!u) return;
+  const web = `https://www.instagram.com/${u}/`, ua = navigator.userAgent;
+  if (/Android/i.test(ua)){
+    ev.preventDefault();
+    location.href = `intent://www.instagram.com/_u/${u}/#Intent;scheme=https;package=com.instagram.android;S.browser_fallback_url=${encodeURIComponent(web)};end`;
+  } else if (/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)){
+    ev.preventDefault();
+    const t = setTimeout(() => { if (!document.hidden) location.href = web; }, 1500);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) clearTimeout(t); }, {once: true});
+    location.href = `instagram://user?username=${u}`;
+  }
+});
