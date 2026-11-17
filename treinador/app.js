@@ -1974,10 +1974,22 @@ function telaAvisos(){
   const al = AVS.alunos || [];
   h += `<section class="secao"><header><h2>Ligaram os avisos</h2><span class="cont">${plural(al.length, "aluno")}</span></header>${al.length ? `<div class="card">${al.sort((x, y) => x.nome.localeCompare(y.nome)).map(x =>
     `<div class="recado"><small>${x.hora == null ? "sem lembrete do treino" : `lembrete às ${x.hora}h`}${x.resumo ? " · resumo do domingo" : ""}${x.n > 1 ? ` · ${x.n} celulares` : ""}</small>${esc(x.nome)}</div>`).join("")}</div>` : `<p class="vazio">Nenhum aluno ligou ainda. No app, o convite aparece depois que ele anota o primeiro treino (ou no 🔔).</p>`}</section>`;
-  const env = AVS.enviados || [];
-  if (env.length) h += `<section class="secao"><header><h2>Últimos avisos</h2></header><div class="card">${env.map(x => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(x.quando) || [];
-    return `<div class="recado"><small>${m[3]}/${m[2]} ${m[4] || ""} · ${esc(primeiro(x.nome))} · ${x.entregue ? esc(x.entregue.replace(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} ?/, "")) || "entregue" : "esperando as 7h"}</small><b>${esc(x.titulo)}</b> ${esc(x.texto)}</div>`; }).join("")}</div></section>`;
+  // o mesmo aviso mandado para todos vira uma linha só ("Todos (N)"); Excluir desde a versão 19 (pedido do criador, 17/11/2026)
+  const env = [], grupo = {};
+  (AVS.enviados || []).forEach(x => { const k = x.tipo === "treinador" ? [x.quando, x.titulo, x.texto].join("|") : "";
+    if (k && grupo[k]){ grupo[k].nomes.push(x.nome); return; } const g = {...x, nomes: [x.nome]}; if (k) grupo[k] = g; env.push(g); });
+  const podeExcluir = (INICIO.versao || 0) >= 19;
+  if (env.length) h += `<section class="secao"><header><h2>Últimos avisos</h2></header><div class="card">${env.map((x, i) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(x.quando) || [];
+    const quem = x.nomes.length > 1 ? `Todos (${x.nomes.length} alunos)` : esc(primeiro(x.nome));
+    return `<div class="recado"><small>${m[3]}/${m[2]} ${m[4] || ""} · ${quem} · ${x.entregue ? esc(x.entregue.replace(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} ?/, "")) || "entregue" : "esperando as 7h"}</small><b>${esc(x.titulo)}</b> ${esc(x.texto)}${podeExcluir && x.id ? `<div class="acoes"><button type="button" class="btn" data-avx="${i}">Excluir</button></div>` : ""}</div>`; }).join("")}</div>${podeExcluir ? "" : `<p class="sub">Para excluir avisos, cole o código novo do servidor (página Ligar o app do treinador, versão 19).</p>`}</section>`;
   $("tela").innerHTML = h;
+  document.querySelectorAll("[data-avx]").forEach(b => b.onclick = async () => {
+    const x = env[+b.dataset.avx], todos = x.nomes.length > 1;
+    if (!confirm(`Excluir o aviso "${x.titulo}"${todos ? ` de todos os ${x.nomes.length} alunos` : ` de ${primeiro(x.nome)}`}? Ele some do 🔔 do app${x.entregue ? "" : " e não sai mais às 7h"}. O que já apareceu nas notificações do celular continua lá.`)) return;
+    b.disabled = true; b.textContent = "Excluindo…";
+    try { await chamar({acao: "t_aviso_excluir", id: x.id, todos}, 60000); AVS.enviados = (AVS.enviados || []).filter(y => !(y.id === x.id || (todos && y.tipo === "treinador" && y.quando === x.quando && y.titulo === x.titulo && y.texto === x.texto))); aviso("Aviso excluído ✓"); telaAvisos(); }
+    catch(e){ b.disabled = false; b.textContent = "Excluir"; aviso(e.servidor ? "Não excluiu: " + e.message : "Sem internet: nada foi excluído."); }
+  });
   document.querySelectorAll("[data-av]").forEach(b => b.onclick = async () => {
     const k = b.dataset.av, novo = !cfg[k]; b.disabled = true; $("avCfgMsg").textContent = "Salvando…";
     try { const j = await chamar({acao: "t_avisos_cfg", cfg: {[k]: novo}}, 60000); AVS.cfg = j.cfg; AVS.gatilho = j.gatilho; AVS.erroGatilho = j.erroGatilho; INICIO.avisos_cfg = j.cfg; guardar("t_inicio", INICIO); telaAvisos(); }
