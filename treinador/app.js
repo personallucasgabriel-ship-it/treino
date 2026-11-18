@@ -1336,9 +1336,9 @@ function cartaoInstagram(){
   const quando = ig.lido_em ? new Date(ig.lido_em) : null, u = ig.ultimo;
   let h = `<div class="card ig"><div class="ig-topo"><h3>📷 Instagram automático</h3><span class="termo ${ig.ligado ? "t-ok" : "t-frio"}">${ig.ligado ? "ligado" : "desligado"}</span></div>`;
   if (ig.ligado){
-    h += `<p class="sub">${ig.usuario ? `Conta @${esc(ig.usuario)}. ` : ""}Todo dia às 7h eu leio os comentários, as DMs e as respostas de story e anoto no termômetro. Quem ainda não é lead aparece em Sugestões: você decide.${quando ? ` Última leitura: ${dd(quando)} às ${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}${u ? ` (${plural(u.interacoes || 0, "ação", "ações")}, ${plural(u.leads_novos || 0, "sugestão de lead", "sugestões de lead")})` : ""}.` : ""}</p>`;
+    h += `<p class="sub">${ig.usuario ? `Conta @${esc(ig.usuario)}. ` : ""}${ig.ritmo === "vivo" ? "Das 7h às 23h eu leio as DMs e as respostas de story de 5 em 5 minutos e os comentários de hora em hora, e anoto no termômetro." : "Todo dia às 7h eu leio os comentários, as DMs e as respostas de story e anoto no termômetro."} Quem ainda não é lead aparece em Sugestões: você decide.${quando ? ` Última leitura: ${dd(quando)} às ${String(quando.getHours()).padStart(2, "0")}:${String(quando.getMinutes()).padStart(2, "0")}${u ? ` (${plural(u.interacoes || 0, "ação", "ações")}, ${plural(u.leads_novos || 0, "sugestão de lead", "sugestões de lead")})` : ""}.` : ""}</p>`;
     if (ig.erro) h += `<p class="sub erro">O Instagram respondeu: ${esc(ig.erro)}. Se falar de chave ou "token", gere uma chave nova e troque aqui.</p>`;
-    if (!ig.despertador) h += `<p class="sub erro">O despertador das 7h não está ligado: troque a chave (cole a mesma) para ligar de novo.</p>`;
+    if (!ig.despertador) h += `<p class="sub erro">O despertador ${ig.ritmo === "vivo" ? "do Instagram" : "das 7h"} não está ligado: troque a chave (cole a mesma) para ligar de novo.</p>`;
     h += `<div class="acoes"><button class="btn amarelo" type="button" id="igAgora">Ler agora</button><button class="btn" type="button" id="igTrocar">${igAberto ? "Cancelar" : "Trocar a chave"}</button><button class="btn" type="button" id="igDesl">Desligar</button></div>`;
   } else {
     h += `<p class="sub">Lê sozinho os comentários, as DMs e as respostas de story e põe no termômetro. Curtidas e quem começou a seguir continuam pelo print. Para ligar, crie a chave no aplicativo da Meta (o passo a passo está no chat) e cole aqui.</p>`;
@@ -1360,9 +1360,9 @@ function ligarInstagram(){
     finally { igEnviando = false; }
   };
   if ($("igOk")) $("igOk").onclick = () => { const t = ($("igChave").value || "").replace(/\s+/g, ""); if (t.length < 50){ $("igMsg").textContent = /^\d+$/.test(t) ? "Esse é o número da conta: ele vai no campo de baixo. Em cima vai o código comprido do Gerar token." : "Cole o código inteiro (ele é bem comprido)."; return; }
-    enviar({acao: "t_ig_chave", token: t, conta: ($("igConta").value || "").replace(/\D/g, "")}, "Conferindo com o Instagram…", f => ({texto: `Instagram ligado${f.usuario ? ` (@${f.usuario})` : ""}. Amanhã às 7h sai a primeira leitura; para ver já, toque em Ler agora.`})); };
+    enviar({acao: "t_ig_chave", token: t, conta: ($("igConta").value || "").replace(/\D/g, "")}, "Conferindo com o Instagram…", f => ({texto: `Instagram ligado${f.usuario ? ` (@${f.usuario})` : ""}. A leitura automática já começa; para ver agora, toque em Ler agora.`})); };
   if ($("igAgora")) $("igAgora").onclick = () => enviar({acao: "t_ig_agora"}, "Lendo o Instagram… (pode levar 1 minuto)", f => ({texto: f.ig === "lido" ? `Li o Instagram: ${plural(f.interacoes || 0, "ação nova", "ações novas")}, ${plural(f.leads_novos || 0, "sugestão de lead nova", "sugestões de lead novas")}.${f.erro ? ` Aviso: ${f.erro}` : ""}` : "O Instagram não está ligado."}));
-  if ($("igDesl")) $("igDesl").onclick = () => { if (confirm("Desligar o Instagram automático? A chave sai do servidor e a leitura das 7h para. O que já foi anotado continua.")) enviar({acao: "t_ig_desligar"}, "Desligando…", () => ({texto: "Instagram automático desligado."})); };
+  if ($("igDesl")) $("igDesl").onclick = () => { if (confirm("Desligar o Instagram automático? A chave sai do servidor e a leitura automática para. O que já foi anotado continua.")) enviar({acao: "t_ig_desligar"}, "Desligando…", () => ({texto: "Instagram automático desligado."})); };
 }
 
 function datasRapidas(id){ return `<div class="filtros" role="group" id="${id}R">${[["1", "Amanhã"], ["3", "Em 3 dias"], ["7", "Em 1 semana"], ["0", "Sem data"]].map(([v, t]) => `<button type="button" data-d="${v}">${t}</button>`).join("")}</div>`; }
@@ -1925,7 +1925,7 @@ let AVS = null, avsLendo = false;
 function cartaoAvisosHoje(alunos){
   if ((INICIO.versao || 0) < 17) return "";
   const com = alunos.filter(a => a.avisos > 0).length, ligados = AV_INFO.filter(([k]) => (INICIO.avisos_cfg || {})[k]).length;
-  return `<a class="card avcard" href="#/avisos"><span aria-hidden="true">🔔</span><span><b>Avisos no celular</b><small>${plural(com, "aluno")} com os avisos ligados · ${ligados} de ${AV_INFO.length} automáticos ligados</small></span><span aria-hidden="true">›</span></a>`;
+  return `<a class="card avcard" href="#/avisos"><span aria-hidden="true">🔔</span><span><b>Avisos no celular</b><small>${plural(com, "aluno")} com os avisos ligados · ${ligados} de ${AV_INFO.length} automáticos ligados${(INICIO.versao || 0) >= 22 ? ` · recados no seu celular: ${estadoMeus() === "ligado" ? "ligado" : "desligado"}` : ""}</small></span><span aria-hidden="true">›</span></a>`;
 }
 function formAviso(id){
   return `<div class="card form"><div><span class="rot">Pronto para usar</span><div class="filtros" role="group" id="${id}P">${AV_PRONTOS.map(([n], i) => `<button type="button" data-i="${i}" aria-pressed="false">${n}</button>`).join("")}</div></div>
@@ -1959,12 +1959,101 @@ async function lerAvisos(){
   finally { avsLendo = false; }
   if (rota().tela === "avisos") telaAvisos();
 }
+// ---------- recados dos alunos no SEU celular (servidor versão 22; pedido do criador, 18/11/2026) ----------
+// O aluno anota um recado no app → o servidor acorda este celular → o sw.js busca o aviso (t_meus_avisos) e mostra.
+// O sw.js não lê o localStorage: a chave do treinador e a do servidor de avisos ficam no cache "cfg-avisos-tr".
+const K_TRCEL = "t_avcel";
+let MEUS = null, meusLendo = false;
+const pushOk = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const ehIphone = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const instalado = () => (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+function bytesB64(b64){ const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64.length + 3) % 4)); return Uint8Array.from(s, c => c.charCodeAt(0)); }
+function mesmosBytes(buf, u8){ try { const a = new Uint8Array(buf); return a.length === u8.length && a.every((v, i) => v === u8[i]); } catch(e){ return false; } }
+async function guardarCfgTr(extra){
+  if (!("caches" in window) || window.__API_MOCK) return;
+  try { const c = await caches.open("cfg-avisos-tr"), r = await c.match("cfg"), velho = r ? await r.json() : {};
+    await c.put("cfg", new Response(JSON.stringify({...velho, api: API, tchave: CHAVE, ligado: !!ler(K_TRCEL), ...(extra || {})}))); } catch(e){}
+}
+function estadoMeus(){
+  if (!pushOk()) return ehIphone() && !instalado() ? "instalar" : "sem";
+  if (ehIphone() && !instalado()) return "instalar";
+  if (Notification.permission === "denied") return "bloqueado";
+  return ler(K_TRCEL) && Notification.permission === "granted" ? "ligado" : "desligado";
+}
+async function lerMeus(){
+  if (meusLendo) return; meusLendo = true;
+  try { MEUS = await chamar({acao: "t_meus_avisos"}, 60000); if (MEUS.chave) guardarCfgTr({vapid: MEUS.chave}); }
+  catch(e){ MEUS = {erro: e.servidor ? e.message : "Sem internet."}; }
+  finally { meusLendo = false; }
+  if (rota().tela === "avisos") telaAvisos();
+}
+async function inscreverTr(vapid){
+  const reg = await navigator.serviceWorker.ready, k = bytesB64(vapid);
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && sub.options && sub.options.applicationServerKey && !mesmosBytes(sub.options.applicationServerKey, k)){ await sub.unsubscribe(); sub = null; }
+  return sub || reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: k});
+}
+async function ligarMeusAvisos(){
+  const perm = await Notification.requestPermission();   // tem que ser a 1ª coisa do toque (o iPhone exige)
+  if (perm !== "granted") throw new Error(perm === "denied" ? "O celular bloqueou os avisos deste app. Libere nos ajustes do celular e tente de novo." : "Você não permitiu os avisos.");
+  if (!MEUS || !MEUS.chave) throw new Error("Ainda não li a chave dos avisos. Toque em ↻ e tente de novo.");
+  const sub = await inscreverTr(MEUS.chave);
+  MEUS = await chamar({acao: "t_meus_avisos_ligar", sub: sub.toJSON()}, 60000);
+  guardar(K_TRCEL, {endpoint: sub.endpoint}); await guardarCfgTr({vapid: MEUS.chave, ligado: true});
+}
+async function desligarMeusAvisos(){
+  const cel = ler(K_TRCEL);
+  try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch(e){}
+  try { localStorage.removeItem(K_TRCEL); } catch(e){}
+  await guardarCfgTr({ligado: false});
+  if (cel) MEUS = await chamar({acao: "t_meus_avisos_desligar", endpoint: cel.endpoint}, 60000);
+}
+async function conferirMeusAvisos(){ // ao abrir o app: o celular às vezes troca o endereço dos avisos; manda o novo
+  if (window.__API_MOCK || !CHAVE || !ler(K_TRCEL) || ((INICIO && INICIO.versao) || 0) < 22 || !pushOk()) return;
+  try {
+    await guardarCfgTr();
+    const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if (!sub){ localStorage.removeItem(K_TRCEL); guardarCfgTr({ligado: false}); return; }
+    if (sub.endpoint !== ler(K_TRCEL).endpoint){ await chamar({acao: "t_meus_avisos_ligar", sub: sub.toJSON()}, 60000); guardar(K_TRCEL, {endpoint: sub.endpoint}); }
+  } catch(e){}
+}
+function secaoMeusAvisos(){
+  if ((INICIO.versao || 0) < 22) return `<section class="secao"><header><h2>Recados no seu celular</h2></header><p class="sub">Para receber no celular o recado que o aluno deixa no app, cole o código novo do servidor (página Ligar o app do treinador, versão 22) e toque em ↻.</p></section>`;
+  if (!MEUS && !meusLendo) lerMeus();
+  const est = estadoMeus();
+  let h = `<section class="secao"><header><h2>Recados no seu celular</h2><span class="cont">${est === "ligado" ? "ligado ✓" : "desligado"}</span></header>
+    <p class="sub">Quando um aluno escreve um recado no app (no exercício ou no cardio), chega um aviso aqui no seu celular, das 7h às 23h. Tocar no aviso abre a página do aluno. De noite, o aviso espera as 7h.</p>`;
+  if (est === "instalar") h += `<p class="sub erro">No iPhone, o aviso só chega com o app na tela de início: no Safari, toque em Compartilhar › Adicionar à Tela de Início, abra o app por lá e volte aqui.</p>`;
+  else if (est === "sem") h += `<p class="sub erro">Este navegador não recebe avisos. No Android, use o Chrome.</p>`;
+  else if (est === "bloqueado") h += `<p class="sub erro">Os avisos deste app estão bloqueados no celular. Libere nos ajustes (Notificações) e volte aqui.</p>`;
+  else h += `<div class="acoes">${est === "ligado" ? `<button class="btn" type="button" id="meusDesl">Desligar neste celular</button>` : `<button class="btn amarelo" type="button" id="meusLig">Ligar neste celular</button>`}</div>`;
+  h += `<p class="sub" id="meusMsg">${MEUS && MEUS.erro ? esc(MEUS.erro) : ""}</p>`;
+  const lista = (MEUS && MEUS.avisos) || [];
+  if (lista.length) h += `<div class="card">${lista.slice(0, 8).map(x => `<a class="recado" style="display:block;color:inherit;text-decoration:none;padding:6px 0" href="#${esc(x.abrir || "/hoje")}"><small>${esc(String(x.quando).slice(8, 10) + "/" + String(x.quando).slice(5, 7) + " " + String(x.quando).slice(11, 16))}</small><b>${esc(x.titulo)}</b> ${esc(x.texto)}</a>`).join("")}</div>`;
+  return h + `</section>`;
+}
+function ligarBotoesMeus(){
+  const msg = $("meusMsg");
+  if ($("meusLig")) $("meusLig").onclick = async () => {
+    $("meusLig").disabled = true; msg.textContent = "Ligando…";
+    try { await ligarMeusAvisos(); aviso("Recados ligados neste celular ✓"); telaAvisos(); }
+    catch(e){ $("meusLig").disabled = false; msg.textContent = e.servidor ? "Não ligou: " + e.message : e.message || "Sem internet: não ligou."; }
+  };
+  if ($("meusDesl")) $("meusDesl").onclick = async () => {
+    $("meusDesl").disabled = true; msg.textContent = "Desligando…";
+    try { await desligarMeusAvisos(); aviso("Recados desligados neste celular."); telaAvisos(); }
+    catch(e){ $("meusDesl").disabled = false; msg.textContent = "Sem internet: não desligou."; }
+  };
+}
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.abrir) location.hash = "#" + e.data.abrir; });
+
 function telaAvisos(){
   let h = `<div><div class="eyebrow">No celular dos alunos</div><h1>Avisos</h1></div>`;
   if ((INICIO.versao || 0) < 17){ $("tela").innerHTML = h + `<p class="vazio">Para os avisos, cole o código novo do servidor (página Ligar o app do treinador, versão 17).</p>`; return; }
   if (!AVS){ $("tela").innerHTML = h + `<p class="carregando">Lendo os avisos…</p>`; lerAvisos(); return; }
   if (AVS.erro){ $("tela").innerHTML = h + `<p class="vazio">${esc(AVS.erro)}</p><div class="acoes"><button class="btn" type="button" id="avDeNovo">Tentar de novo</button></div>`; $("avDeNovo").onclick = () => { AVS = null; telaAvisos(); }; return; }
   const cfg = AVS.cfg || {};
+  h += secaoMeusAvisos();
   h += `<p class="sub">Cada aluno liga no app dele (🔔 › Ativar avisos) e escolhe a hora do lembrete. No máximo 1 aviso automático por dia por aluno, nada entre 21h e 6h, e o aviso fica também no 🔔 do app. Leia cada texto e ligue só os que quiser.</p>`;
   if (AVS.gatilho === false) h += `<div class="card alerta"><b>Falta o despertador dos avisos</b><p class="sub">${AVS.erroGatilho ? esc(AVS.erroGatilho) + " · " : ""}Sem ele, só os avisos que você manda saem. Faça o passo "Ligue o despertador dos avisos" da página Ligar o app do treinador.</p></div>`;
   h += `<section class="secao"><header><h2>Automáticos</h2><span class="cont">${AV_INFO.filter(([k]) => cfg[k]).length} de ${AV_INFO.length} ligados</span></header><div class="lista">${AV_INFO.map(([k, nome, quando, tit, tx]) =>
@@ -1996,12 +2085,13 @@ function telaAvisos(){
     catch(e){ b.disabled = false; $("avCfgMsg").textContent = e.servidor ? "Não salvou: " + e.message : "Sem internet: não salvou."; }
   });
   ligarFormAviso("avT", t => ({acao: "t_aviso_todos", ...t}), j => `${j.depois ? "Guardado ✓ Sai às 7h." : "Mandado ✓"} ${plural(j.alunos, "aluno")}, ${plural(j.aparelhos, "celular")} com os avisos ligados.`, "Mandar este aviso para TODOS os alunos com o app?");
+  ligarBotoesMeus();
 }
 
 // Abrir o app: no fim do arquivo, depois de todas as listas (AV_INFO e outras) existirem.
 // Antes ficava no meio e quebrava a aba Hoje quando o celular já tinha dados guardados (15/11/2026).
 render(false);
-if (CHAVE){ if (INICIO) mostrarStatus(Object.keys(FILA).length ? "local" : "ok"); atualizar(); }
+if (CHAVE){ if (INICIO) mostrarStatus(Object.keys(FILA).length ? "local" : "ok"); atualizar(); setTimeout(conferirMeusAvisos, 4000); }
 
 // Instagram do lead (17/11/2026, o criador avisou que o botão não abria o Instagram): no celular, abre direto o
 // aplicativo do Instagram no perfil da pessoa; sem o aplicativo, abre o perfil no navegador. No computador, o link normal.
