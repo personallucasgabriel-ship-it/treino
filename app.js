@@ -55,6 +55,11 @@ function ler(k){ try { const v = localStorage.getItem(k); return v == null ? nul
 function guardar(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e){ return false; } }
 const K_DADOS = "dados:" + CODIGO, K_FILA = "fila:" + CODIGO;
 
+// "Como fazer" de cada exercício (planilha "Como fazer (exercícios do app)" no Drive; só as linhas com "sim" em "No app").
+// Igual para todos os alunos; fica guardado no celular para abrir sem internet.
+const K_CF = "comofazer";
+let CF = ler(K_CF) || {}, cfBuscado = 0;
+
 // ---------- servidor ----------
 async function chamar(corpo, ms){
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), ms || 25000);
@@ -482,6 +487,7 @@ function render(){
       <div class="acoes">
         ${ant ? `<button class="btn" type="button" data-repetir="${k}">Mesma carga da semana ${ant.semana}</button>` : ""}
         ${desc[i] ? `<button class="btn amarelo" type="button" data-desc="${esc(ex.nome)}">Descanso ${mmss(REST)}</button>` : `<span class="nota">Sem descanso: vá direto para o próximo.</span>`}
+        <button class="btn" type="button" data-cf="${esc(ex.nome.trim())}" ${CF[ex.nome.trim()] ? "" : "hidden"}>Como fazer</button>
         ${ex.video ? `<a class="btn" href="${esc(ex.video)}" target="_blank" rel="noopener">▶ Vídeo</a>` : ""}
         <button class="btn${msg ? " tem" : ""}" type="button" data-recado="${k}">${msg ? "✎ Recado" : "✎ Recado para o treinador"}</button>
       </div></article>`; });
@@ -513,6 +519,7 @@ function render(){
   tela.querySelectorAll("[data-repetir]").forEach(b => b.onclick = () => { const k = +b.dataset.repetir, ex = d.exercicios[k-1], ant = anterior(ex.nome, semanaN);
     (ant ? ant.series : []).forEach((a,si) => { if (!a || si >= ex.series) return; const el = $(`d${n}e${k}s${si+1}k`); if (el && el.value === ""){ el.value = fmt(a.kg); digitou(el); } }); });
   tela.querySelectorAll("[data-desc]").forEach(b => b.onclick = () => iniciar(b.dataset.desc));
+  tela.querySelectorAll("[data-cf]").forEach(b => b.onclick = () => abrirComoFazer(b.dataset.cf, b));
   tela.querySelectorAll("[data-recado]").forEach(b => b.onclick = () => { const k = b.dataset.recado, box = $(`rc-${n}-${k}`); box.hidden = !box.hidden; if (!box.hidden) $(`m-${n}-${k}`).focus(); });
   $("enviar").onclick = mostrarRegistro;
 }
@@ -1190,6 +1197,7 @@ async function atualizar(){
       if (foco){ montarDados(raw); precisaRender = true; } else mostrar(raw, false); }
     if (P && (!!raw.dieta !== P.dieta || JSON.stringify(raw.plano || null) !== JSON.stringify(P.plano))){ P.dieta = !!raw.dieta; P.plano = raw.plano || null; avisos(); aplicarAba(); }
     assinatura = nova; mostrarStatus(Object.keys(FILA).length ? "local" : "ok");
+    buscarComoFazer();
     enviar();
   } catch(e){
     if (P){ mostrarStatus(Object.keys(FILA).length ? "offline" : "velho"); return; }
@@ -1197,6 +1205,35 @@ async function atualizar(){
     else if (e.servidor) erroTela("Não consegui abrir o seu treino", e.message, "Tentar de novo");
     else erroTela("Sem internet", "Na primeira vez, o app precisa de internet para baixar o seu treino. Depois ele abre mesmo sem sinal.", "Tentar de novo");
   }
+}
+
+// ---------- Como fazer ----------
+async function buscarComoFazer(){
+  if (Date.now() - cfBuscado < 10*60*1000) return;   // no máximo a cada 10 min (o servidor também guarda 10 min)
+  cfBuscado = Date.now();
+  try {
+    const r = await chamar({acao: "como_fazer", codigo: CODIGO});
+    CF = r.ex || {}; guardar(K_CF, CF);
+    document.querySelectorAll("[data-cf]").forEach(b => b.hidden = !CF[b.dataset.cf]);
+  } catch(e){}   // servidor antigo (sem a ação) ou sem internet: fica o que já estava guardado
+}
+function abrirComoFazer(nome, origem){
+  const x = CF[nome]; if (!x) return;
+  fecharPse();
+  const video = (P && P.videos && P.videos[nome]) || "";
+  const fundo = document.createElement("div"); fundo.className = "pse-fundo"; fundo.id = "pseFundo";
+  fundo.innerHTML = `<div class="pse-folha av-folha cf-folha" role="dialog" aria-modal="true" aria-labelledby="cfTit">
+    <div class="pse-topo"><div><h3 id="cfTit">${esc(nome)}</h3><p>Como fazer</p></div><button type="button" class="pse-x" aria-label="Fechar">✕</button></div>
+    ${video ? `<a class="btn" href="${esc(video)}" target="_blank" rel="noopener">▶ Vídeo</a>` : ""}
+    ${x.passos.length ? `<ol class="cf-passos">${x.passos.map(p => `<li>${esc(p)}</li>`).join("")}</ol>` : ""}
+    ${x.erros.length ? `<h4 class="cf-tit">Erros mais comuns</h4>${x.erros.map(([er, ce]) => `<div class="cf-erro">${er ? `<p><span class="cf-x">Errado</span>${esc(er)}</p>` : ""}${ce ? `<p><span class="cf-ok">Certo</span>${esc(ce)}</p>` : ""}</div>`).join("")}` : ""}
+    ${x.sentir ? `<h4 class="cf-tit">Onde sentir</h4><p class="cf-sentir">${esc(x.sentir)}</p>` : ""}</div>`;
+  document.body.appendChild(fundo);
+  const fechar = () => { fecharPse(); if (origem && document.body.contains(origem)) origem.focus(); };
+  fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
+  fundo.querySelector(".pse-x").onclick = fechar;
+  fundo.addEventListener("keydown", ev => { if (ev.key === "Escape") fechar(); });
+  fundo.querySelector(".pse-x").focus({preventScroll: true});
 }
 
 window.addEventListener("online", () => { tentativas = 0; enviar(); });
