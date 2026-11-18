@@ -1213,6 +1213,20 @@ function contatoLink(c){
 function lerLeadsDe(j){
   LEADS = {leads: j.leads, origens: j.origens, interesses: j.interesses, etapas: j.etapas, motivos: j.motivos, planilha: j.planilha, lido_em: j.lido_em, ig: j.ig || null, sugestoes: j.sugestoes || []};
   guardar("t_leads", LEADS);
+  igMandarIgnorados();
+}
+// Ignorar sugestão (18/11/2026): o @ some na hora e fica guardado no celular até o servidor confirmar.
+// Antes, se o servidor demorasse ou falhasse, aparecia "Sem internet" e a sugestão continuava ali.
+let igIgnorando = false;
+const igIgnPendentes = () => ler("t_ig_ign") || [];
+async function igMandarIgnorados(){
+  const pend = igIgnPendentes(); if (igIgnorando || !pend.length) return; igIgnorando = true;
+  try {
+    for (const u of pend){
+      try { await chamar({acao: "t_ig_ignorar", usuario: u}, 90000); guardar("t_ig_ign", igIgnPendentes().filter(x => x !== u)); }
+      catch(e){ if (e.servidor) guardar("t_ig_ign", igIgnPendentes().filter(x => x !== u)); else break; }
+    }
+  } finally { igIgnorando = false; }
 }
 async function lerLeads(silencioso){
   if (leadsLendo) return; leadsLendo = true;
@@ -1253,7 +1267,7 @@ function telaLeads(erro){
   </div>`;
   h += `<div class="acoes"><button class="btn amarelo" type="button" id="ldNovo" aria-pressed="${!!leadForm}">+ Lead</button>${escolha("ldVista", [["lista", "Lista"], ["quadro", "Quadro"]], leadsVista)}</div><div id="ldForm"></div>`;
   h += cartaoInstagram();
-  const sug = LEADS.sugestoes || [];
+  const ignLocal = igIgnPendentes(), sug = (LEADS.sugestoes || []).filter(x => !ignLocal.includes(x.usuario));
   if (sug.length) h += `<section class="secao"><header><h2>Sugestões do Instagram</h2><span class="cont">você decide</span></header><div class="lista">${sug.map(x => `<div class="lead sug"><div class="aluno"><span class="bola t-morno"></span><span class="meio"><h3>@${esc(x.usuario)}</h3><p>${esc([x.acao + " em " + ddIso(x.ultima), x.obs].filter(Boolean).join(" · "))}</p></span>
     <span class="acoes"><a class="btn" href="https://instagram.com/${esc(x.usuario)}" target="_blank" rel="noopener">Ver</a><button class="btn amarelo" type="button" data-sug="${esc(x.usuario)}" data-orig="${esc(x.origem)}">Pôr como lead</button><button class="btn" type="button" data-ign="${esc(x.usuario)}">Ignorar</button></span></div></div>`).join("")}</div></section>`;
   if (leadsVista === "quadro"){
@@ -1309,9 +1323,9 @@ function telaLeads(erro){
   ligarEscolha("ldVista", v => { leadsVista = v; guardar("t_leads_vista", v); leadAberto = 0; telaLeads(); });
   ligarQuadro(); ligarInstagram();
   document.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { leadForm = {contato: "@" + b.dataset.sug, origem: b.dataset.orig}; leadAberto = 0; leadFeito = null; telaLeads(); if ($("lnNome")) $("lnNome").focus(); });
-  document.querySelectorAll("[data-ign]").forEach(b => b.onclick = async () => { if (leadEnviando) return; leadEnviando = true; b.disabled = true;
-    try { lerLeadsDe(await chamar({acao: "t_ig_ignorar", usuario: b.dataset.ign}, 60000)); leadFeito = {texto: `@${b.dataset.ign} saiu das sugestões.`}; telaLeads(); }
-    catch(e){ b.disabled = false; aviso(e.servidor ? e.message : "Sem internet: tente de novo."); } finally { leadEnviando = false; } });
+  document.querySelectorAll("[data-ign]").forEach(b => b.onclick = () => { const u = b.dataset.ign;
+    const pend = igIgnPendentes(); if (!pend.includes(u)) guardar("t_ig_ign", pend.concat(u));
+    leadFeito = {texto: `@${u} saiu das sugestões.`}; telaLeads(); igMandarIgnorados(); });
   if (leadForm) formLead();
   if (leadAberto) editarLead((LEADS.leads || []).find(l => l.linha === leadAberto), leadEtapaNova);
   if (!quando || Date.now() - quando > 5 * 60e3) lerLeads(true);
