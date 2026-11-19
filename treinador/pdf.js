@@ -221,7 +221,7 @@ async function pdfTreino(a){
   }
   if (recs.length){
     R.h2("Recordes", plural(recs.length, "recorde", "recordes"));
-    R.tabela(["Exercício", "Semana", "Recorde"], recs.slice().sort((x, y) => y.semana - x.semana).slice(0, 30).map(x => [x.exercicio, "S" + x.semana, x.texto || ""]), [2.2, .7, 2.2]);
+    R.tabela(["Exercício", "Semana", "Recorde"], recs.slice().sort((x, y) => y.semana - x.semana).slice(0, 30).map(x => [x.exercicio, "S" + x.semana, txtRec(x.texto)]), [2.2, .7, 2.2]);
   }
   return R.fim(`Evolução do treino ${a.nome} ${isoDe(hojeZero())}`);
 }

@@ -269,7 +269,7 @@ function telaHoje(){
   const recs = []; alunos.forEach(a => { const c = ciclo(a); ((a.resumo && a.resumo.recordes) || []).filter(x => c.semana && x.semana >= c.semana - 1 && x.semana <= c.semana).forEach(x => recs.push({...x, a})); });
   if (recs.length){
     h += `<section class="secao"><header><h2>Recordes</h2><span class="cont">esta semana e a passada</span></header><div class="card">${recs.slice(-12).reverse().map(x =>
-      `<div class="recado"><small>${esc(primeiro(x.a.nome))} · semana ${x.semana}</small>🏆 ${esc(x.exercicio)} · ${esc(x.texto || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
+      `<div class="recado"><small>${esc(primeiro(x.a.nome))} · semana ${x.semana}</small>🏆 ${esc(x.exercicio)} · ${esc(txtRec(x.texto) || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
   }
   $("tela").innerHTML = h;
 }
@@ -366,7 +366,7 @@ function resumoAluno(a){
   const rs = (r.recados || []).slice().sort((x,y) => y.semana - x.semana).slice(0, 8);
   if (rs.length) h += `<section class="secao"><header><h2>Recados do aluno</h2></header><div class="card">${rs.map(x => `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>“${esc(x.texto)}”</div>`).join("")}</div></section>`;
   if (rec.length) h += `<section class="secao"><header><h2>Recordes</h2><span class="cont">últimas 4 semanas</span></header><div class="card">${rec.slice().reverse().map(x =>
-      `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>🏆 ${esc(x.texto || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
+      `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>🏆 ${esc(txtRec(x.texto) || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
   if (a.lido_planilha_erro) h += `<p class="sub">${esc(a.lido_planilha_erro)}</p>`;
   // sugestão alimentar no app do aluno (servidor versão 15; pedido do criador): só com o ok do treinador e sem nutricionista
   if (a.app && (INICIO.versao || 0) >= 15){
@@ -736,8 +736,8 @@ function recorde(d, k, ex){
   return rec ? textoRecorde(rec) : null;
 }
 // Recordes: a mesma regra no app do treinador, no servidor (Treinador.gs) e no relatório (historico.py).
-// 1) Força: com séries de até 10 repetições (a estimativa só vale até 10), a força estimada da melhor série
-//    (Epley: kg × (1 + reps/30)) passa a melhor de antes.
+// 1) Força: com séries de até 10 repetições (a estimativa só vale até 10), a força estimada para 1 RM da melhor série
+//    (Epley: kg × (1 + reps/30)) passa a melhor de antes. O texto mostra "força estimada para 1 RM" (pedido do criador, 19/11/2026).
 // 2) Sem isso: uma série que nenhuma de antes igualou (carga e reps iguais ou maiores) e que supera alguma de antes.
 function recordeDe(agora, antes){
   agora = agora.filter(x => x.reps > 0); antes = antes.filter(x => x.reps > 0);
@@ -760,9 +760,11 @@ function recordeDe(agora, antes){
   const ref = antes.filter(p => p.kg >= melhor.kg).reduce((b,p) => p.reps > b.reps ? p : b);
   return {tipo: "reps", kg: melhor.kg, reps: melhor.reps, antes: ref.reps, antesKg: ref.kg};
 }
+// texto de recorde que vem do servidor (resumo): o servidor colado antes de 19/11/2026 ainda escreve só "força estimada"
+function txtRec(t){ return String(t || "").replace(/\(força estimada (?!para 1 RM)/, "(força estimada para 1 RM: "); }
 function textoRecorde(r){
   const f1 = n => String(Math.round(n * 10) / 10).replace(".", ",");
-  if (r.tipo === "forca") return `Recorde de força: ${fmt(r.kg)} kg × ${r.reps} (força estimada ${f1(r.e1)} kg; antes ${f1(r.antes)} kg)`;
+  if (r.tipo === "forca") return `Recorde de força: ${fmt(r.kg)} kg × ${r.reps} (força estimada para 1 RM: ${f1(r.e1)} kg; antes ${f1(r.antes)} kg)`;
   if (r.tipo === "carga") return `Recorde de carga: ${fmt(r.kg)} kg × ${r.reps} (antes ${fmt(r.antes)} kg)`;
   if (r.kg > 0) return `Recorde de repetições: ${r.reps} com ${fmt(r.kg)} kg (antes ${r.antes}${r.antesKg !== r.kg ? ` com ${fmt(r.antesKg)} kg` : ""})`;
   return `Recorde de repetições: ${r.reps} (antes ${r.antes})`;

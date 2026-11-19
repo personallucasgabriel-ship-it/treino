@@ -272,8 +272,8 @@ function recorde(d, k, ex){ // melhor marca desta semana contra todas as anterio
   return rec ? {tipo: rec.tipo, texto: textoRecorde(rec)} : null;
 }
 // Recordes: a mesma regra no app do treinador, no servidor (Treinador.gs) e no relatório (historico.py).
-// 1) Força: com séries de até 10 repetições (a estimativa só vale até 10), a força estimada da melhor série
-//    (Epley: kg × (1 + reps/30)) passa a melhor de antes.
+// 1) Força: com séries de até 10 repetições (a estimativa só vale até 10), a força estimada para 1 RM da melhor série
+//    (Epley: kg × (1 + reps/30)) passa a melhor de antes. O texto mostra "força estimada para 1 RM" (pedido do criador, 19/11/2026).
 // 2) Sem isso: uma série que nenhuma de antes igualou (carga e reps iguais ou maiores) e que supera alguma de antes.
 function recordeDe(agora, antes){
   agora = agora.filter(x => x.reps > 0); antes = antes.filter(x => x.reps > 0);
@@ -298,7 +298,7 @@ function recordeDe(agora, antes){
 }
 function textoRecorde(r){
   const f1 = n => String(Math.round(n * 10) / 10).replace(".", ",");
-  if (r.tipo === "forca") return `Recorde de força: ${fmt(r.kg)} kg × ${r.reps} (força estimada ${f1(r.e1)} kg; antes ${f1(r.antes)} kg)`;
+  if (r.tipo === "forca") return `Recorde de força: ${fmt(r.kg)} kg × ${r.reps} (força estimada para 1 RM: ${f1(r.e1)} kg; antes ${f1(r.antes)} kg)`;
   if (r.tipo === "carga") return `Recorde de carga: ${fmt(r.kg)} kg × ${r.reps} (antes ${fmt(r.antes)} kg)`;
   if (r.kg > 0) return `Recorde de repetições: ${r.reps} com ${fmt(r.kg)} kg (antes ${r.antes}${r.antesKg !== r.kg ? ` com ${fmt(r.antesKg)} kg` : ""})`;
   return `Recorde de repetições: ${r.reps} (antes ${r.antes})`;
