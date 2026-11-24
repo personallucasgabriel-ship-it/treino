@@ -1244,7 +1244,10 @@ async function lerLeads(silencioso){
 function numerosLeads(leads, ano, mes){
   const m = `${ano}-${String(mes + 1).padStart(2, "0")}`, l = leads.filter(x => (x.data || "").slice(0, 7) === m);
   const vendas = l.filter(x => x.etapa === "Fechou").length;
-  return {leads: l.length, propostas: l.filter(x => txt(x.plano)).length, vendas, conv: l.length ? Math.round(vendas / l.length * 100) : 0};
+  // conversa = lead que saiu de Novo (como na aba Painel da planilha)
+  const conversas = l.filter(x => x.etapa && x.etapa !== "Novo").length;
+  return {leads: l.length, conversas, propostas: l.filter(x => txt(x.plano)).length, vendas,
+    conv: l.length ? Math.round(vendas / l.length * 100) : 0, convConversa: conversas ? Math.round(vendas / conversas * 100) : 0};
 }
 const difTxt = (n, sufixo) => n === 0 ? `igual` : `<span class="${n > 0 ? "sobe" : "desce"}">${n > 0 ? "▲ +" : "▼ "}${n}${sufixo || ""}</span>`;
 
@@ -1263,8 +1266,10 @@ function telaLeads(erro){
   if (leadFeito) h += `<div class="card ok-card"><h3>Anotado ✓</h3><p class="sub">${esc(leadFeito.texto)}</p>${leadFeito.fechou ? `<div class="acoes"><a class="btn amarelo" href="#/fin" id="ldPagar">Anotar o pagamento no Financeiro</a></div>` : ""}</div>`;
   h += `<div class="fatos">
     ${fatoFin(`Leads novos em ${MESES[mes]}`, at.leads, `${difTxt(at.leads - ant.leads)} sobre ${nomeAnt}`)}
+    ${fatoFin("Conversas", at.conversas, `${difTxt(at.conversas - ant.conversas)} sobre ${nomeAnt}`)}
     ${fatoFin("Propostas", at.propostas, `${difTxt(at.propostas - ant.propostas)} sobre ${nomeAnt}`)}
     ${fatoFin("Vendas", at.vendas, `${difTxt(at.vendas - ant.vendas)} sobre ${nomeAnt}`, true)}
+    ${fatoFin("Conversão (conversa → venda)", at.convConversa + "%", `${difTxt(at.convConversa - ant.convConversa, " pontos")} sobre ${nomeAnt}`)}
     ${fatoFin("Conversão (lead → venda)", at.conv + "%", `${difTxt(at.conv - ant.conv, " pontos")} sobre ${nomeAnt}`)}
   </div>`;
   h += `<div class="acoes"><button class="btn amarelo" type="button" id="ldNovo" aria-pressed="${!!leadForm}">+ Lead</button>${escolha("ldVista", [["lista", "Lista"], ["quadro", "Quadro"]], leadsVista)}</div><div id="ldForm"></div>`;
