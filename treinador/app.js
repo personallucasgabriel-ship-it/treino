@@ -301,7 +301,7 @@ function telaAluno(chave, aba){
   const a = alunoPorChave(chave);
   if (!a){ $("tela").innerHTML = `<a class="voltar" href="#/alunos">‹ Alunos</a><div class="card"><h2>Aluno não encontrado</h2><p class="sub">Ele pode ter ido para Inativos. Toque em ↻ para ler o Drive de novo.</p></div>`; return; }
   const [nivel, frase] = situacao(a);
-  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []).concat(temProto && a.modelo === "novo" && (INICIO.versao || 0) >= PRESC_DESDE ? [["treino","Treino"]] : []).concat([["avaliacao","Avaliação"],["dieta","Dieta"]]);
+  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []).concat(temProto && a.modelo === "novo" && (INICIO.versao || 0) >= PRESC_DESDE ? [["treino","Treino"]] : []).concat([["avaliacao","Avaliação"],["dieta","Dieta"]]).concat(temProto ? [["alongar","Alongar"]] : []);
   if (!abas.some(x => x[0] === aba)) aba = "resumo";
   let h = `<a class="voltar" href="#/alunos">‹ Alunos</a>
     <div><div class="eyebrow">${a.modalidade === "presencial" ? "Presencial" : "Consultoria online"}</div><h1>${esc(a.nome)}</h1></div>
@@ -314,7 +314,7 @@ function telaAluno(chave, aba){
   else if (aba === "dieta") dietaAluno(a);
   else carregarAluno(a, () => abrirAba(a, aba));
 }
-function abrirAba(a, aba){ if (aba === "evolucao") evolucaoAluno(a); else if (aba === "treino") prescricaoAluno(a); else if (aba === "avaliacao") avaliacaoAluno(a); else registrarAluno(a); }
+function abrirAba(a, aba){ if (aba === "alongar") alongAluno(a); else if (aba === "evolucao") evolucaoAluno(a); else if (aba === "treino") prescricaoAluno(a); else if (aba === "avaliacao") avaliacaoAluno(a); else registrarAluno(a); }
 
 // no Registrar: os outros alunos com Protocolo, primeiro os do presencial que treinam hoje
 function trocarAluno(atual){
@@ -380,6 +380,83 @@ function resumoAluno(a){
     const t = $("anot").value; $("anotMsg").textContent = "Salvando…";
     try { await chamar({acao: "t_nota", aluno: a.chave, nome: a.nome, texto: t}); a.anotacao = t; guardar("t_inicio", INICIO); $("anotMsg").textContent = "Salvo ✓"; }
     catch(e){ $("anotMsg").textContent = e.servidor ? "Não salvou: " + e.message : "Sem internet: não salvou. Tente de novo com sinal."; }
+  };
+}
+
+// ---------- aba Alongamentos (servidor versão 24; pedido do criador, 26/11/2026) ----------
+// A lista do aluno fica na aba Alongamentos do Protocolo (código, nome, séries e tempo, dica); o "Fiz hoje" do aluno, na aba
+// Alongamentos feitos. Os textos e as fotos são os do Protocolo de alongamentos (../alongamentos/lista.json, app/gerar-alongamentos.py).
+const ALONG_DESDE = 24, ALONG_ED = {};
+let BIB_ALONG = null;
+async function lerBibAlong(){
+  if (BIB_ALONG) return BIB_ALONG;
+  try { const r = await fetch("../alongamentos/lista.json", {cache: "no-cache"}); if (!r.ok) throw new Error(); BIB_ALONG = await r.json(); guardar("t_along_bib", BIB_ALONG); }
+  catch(e){ BIB_ALONG = ler("t_along_bib"); }
+  return BIB_ALONG;
+}
+const isoDdaaaa = t => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(txt(t)); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
+async function alongAluno(a){
+  const el = $("corpo");
+  if ((INICIO.versao || 0) < ALONG_DESDE){ el.innerHTML = `<div class="card alerta"><p class="sub">Para os alongamentos, cole o código novo do servidor (página Ligar o app do treinador, versão ${ALONG_DESDE}) e toque em ↻.</p></div>`; return; }
+  if (!BIB_ALONG){ el.innerHTML = `<p class="carregando">Abrindo os alongamentos…</p>`; await lerBibAlong(); const r = rota(); if (r.aba !== "alongar" || r.chave !== a.chave) return; }
+  if (!BIB_ALONG){ el.innerHTML = `<div class="card"><p class="sub">Sem internet: não consegui abrir a lista dos alongamentos.</p></div>`; return; }
+  pintarAlongTr(a);
+}
+function pintarAlongTr(a){
+  const el = $("corpo"), d = DADOS[a.chave] || {}, al = d.along || {lista: [], feitos: []}, nome = esc(primeiro(a.nome));
+  const bib = {}; BIB_ALONG.alongamentos.forEach(e => bib[e.cod] = e);
+  const ed = ALONG_ED[a.chave];
+  let h = "";
+  // "Fiz hoje" do aluno
+  const feitos = new Set(al.feitos || []), hoje = hojeZero();
+  const dias28 = [...Array(28)].map((_, i) => { const x = new Date(hoje); x.setDate(x.getDate() - 27 + i); return x; });
+  const n28 = dias28.filter(x => feitos.has(ddaaaa(x))).length, ult = (al.feitos || []).map(isoDdaaaa).filter(Boolean).sort((x, y) => y - x)[0];
+  if (al.lista.length) h += `<section class="secao"><header><h2>Fiz hoje</h2><span class="cont">últimas 4 semanas</span></header><div class="card">
+    <div class="along-dias" role="img" aria-label="${n28} de 28 dias">${dias28.map(x => `<span class="${feitos.has(ddaaaa(x)) ? "sim" : ""}${+x === +hoje ? " hoje" : ""}" title="${dd(x)}"></span>`).join("")}</div>
+    <p class="sub">${n28 ? `${plural(n28, "dia")} com alongamento nas últimas 4 semanas. Último: ${dd(ult)}${+ult === +hoje ? " (hoje)" : ""}.` : `${nome} ainda não marcou "Fiz hoje" nas últimas 4 semanas.`}</p></div></section>`;
+  if (!ed){
+    h += `<section class="secao"><header><h2>Alongamentos de ${nome}</h2><span class="cont">${plural(al.lista.length, "alongamento")}</span></header>`;
+    if (!al.lista.length) h += `<div class="card"><p class="vazio">Nenhum alongamento no app ainda. Toque em Escolher, ou me peça no chat ("põe os alongamentos de ${nome} no app", que eu leio o Protocolo de alongamentos dele).</p></div>`;
+    else h += `<div class="card">${al.lista.map(([cod, series, dica], i) => { const e = bib[cod] || {nome: "Código " + cod + " (não existe no protocolo)"};
+      return `<div class="recado along-item">${e.foto ? `<img src="../alongamentos/${esc(e.foto)}" alt="" loading="lazy">` : `<span class="along-sem"></span>`}<div><small>${i + 1}. ${esc(cod)}${series ? " · " + esc(series) : ""}</small><b>${esc(e.nome)}</b>${dica ? `<small style="display:block">Dica: ${esc(dica)}</small>` : ""}</div></div>`; }).join("")}</div>`;
+    h += `<div class="acoes"><button class="btn amarelo" type="button" id="alEditar">${al.lista.length ? "Mudar os alongamentos" : "Escolher os alongamentos"}</button></div>
+      <p class="sub">${a.app ? `Aparecem no app de ${nome}, na aba Alongar (com foto, passos, cronômetro e "Fiz hoje").` : `${nome} ainda não tem o app do aluno: a lista fica guardada na planilha.`}</p></section>`;
+    el.innerHTML = h;
+    $("alEditar").onclick = () => { ALONG_ED[a.chave] = {lista: al.lista.map(([cod, series, dica]) => ({cod, series, dica})), regiao: "", busca: ""}; pintarAlongTr(a); };
+    return;
+  }
+  // edição
+  const usados = new Set(ed.lista.map(x => x.cod));
+  h += `<section class="secao form"><header><h2>Mudar os alongamentos</h2><span class="cont">${plural(ed.lista.length, "alongamento")}</span></header>
+    <div class="card"><label>Séries e tempo para todos<input class="busca" id="alTodos" placeholder="Ex.: 2 x 15 segundos" value="${esc(ed.todos || "")}"></label>
+    <div class="acoes"><button class="btn" type="button" id="alTodosOk">Pôr em todos</button></div></div>`;
+  h += ed.lista.map((x, i) => { const e = bib[x.cod] || {nome: "Código " + x.cod};
+    return `<div class="card along-ed"><div class="along-item">${e.foto ? `<img src="../alongamentos/${esc(e.foto)}" alt="" loading="lazy">` : `<span class="along-sem"></span>`}<div><small>${i + 1}. ${esc(x.cod)}</small><b>${esc(e.nome)}</b></div></div>
+      <label>Séries e tempo<input class="busca" data-k="series" data-i="${i}" value="${esc(x.series || "")}" placeholder="Ex.: 2 x 15 segundos"></label>
+      <label>Dica para ${nome} (vazia = a do protocolo${e.dica ? `: "${esc(e.dica)}"` : ""})<input class="busca" data-k="dica" data-i="${i}" value="${esc(x.dica || "")}"></label>
+      <div class="acoes"><button class="btn" type="button" data-mov="-1" data-i="${i}" ${i ? "" : "disabled"}>↑ Subir</button><button class="btn" type="button" data-mov="1" data-i="${i}" ${i < ed.lista.length - 1 ? "" : "disabled"}>↓ Descer</button><button class="btn" type="button" data-tirar="${i}">Tirar</button></div></div>`; }).join("");
+  const regs = BIB_ALONG.regioes || {}, q = (ed.busca || "").toLowerCase();
+  const opcoes = BIB_ALONG.alongamentos.filter(e => !usados.has(e.cod) && (!ed.regiao || e.cod.split(".")[0] === ed.regiao) && (!q || (e.cod + " " + e.nome).toLowerCase().includes(q)));
+  h += `<div class="card"><h3>+ Adicionar</h3>${escolha("alReg", [["", "Todas"]].concat(Object.keys(regs).map(k => [k, regs[k]])), ed.regiao || "")}
+    <input class="busca" id="alBusca" placeholder="Buscar pelo nome ou número" value="${esc(ed.busca || "")}" style="margin-top:8px">
+    <div class="along-opcoes">${opcoes.slice(0, 60).map(e => `<button type="button" class="along-op" data-add="${esc(e.cod)}">${e.foto ? `<img src="../alongamentos/${esc(e.foto)}" alt="" loading="lazy">` : `<span class="along-sem"></span>`}<span><small>${esc(e.cod)}</small>${esc(e.nome)}</span><b>+</b></button>`).join("") || `<p class="sub">Nenhum.</p>`}</div></div>`;
+  h += `<p class="sub" id="alMsg"></p><div class="acoes"><button class="btn amarelo" type="button" id="alSalvar">Salvar</button><button class="btn" type="button" id="alCancelar">Cancelar</button></div></section>`;
+  el.innerHTML = h;
+  el.querySelectorAll("input[data-k]").forEach(inp => inp.oninput = () => { ed.lista[+inp.dataset.i][inp.dataset.k] = inp.value; });
+  el.querySelectorAll("[data-mov]").forEach(b => b.onclick = () => { const i = +b.dataset.i, j = i + +b.dataset.mov; [ed.lista[i], ed.lista[j]] = [ed.lista[j], ed.lista[i]]; pintarAlongTr(a); });
+  el.querySelectorAll("[data-tirar]").forEach(b => b.onclick = () => { ed.lista.splice(+b.dataset.tirar, 1); pintarAlongTr(a); });
+  el.querySelectorAll("[data-add]").forEach(b => b.onclick = () => { const ult = ed.lista[ed.lista.length - 1]; ed.lista.push({cod: b.dataset.add, series: ed.todos || (ult && ult.series) || "", dica: ""}); pintarAlongTr(a); });
+  $("alReg").querySelectorAll("button").forEach(b => b.onclick = () => { ed.regiao = b.dataset.v; pintarAlongTr(a); });
+  $("alBusca").oninput = e => { ed.busca = e.target.value; const pos = e.target.selectionStart; pintarAlongTr(a); const n = $("alBusca"); n.focus(); n.setSelectionRange(pos, pos); };
+  $("alTodos").oninput = e => { ed.todos = e.target.value; };
+  $("alTodosOk").onclick = () => { if (!txt(ed.todos)) return; ed.lista.forEach(x => x.series = txt(ed.todos)); pintarAlongTr(a); };
+  $("alCancelar").onclick = () => { delete ALONG_ED[a.chave]; pintarAlongTr(a); };
+  $("alSalvar").onclick = async () => {
+    const b = $("alSalvar"); b.disabled = true; $("alMsg").textContent = "Salvando na planilha…";
+    const lista = ed.lista.map(x => ({cod: x.cod, nome: (bib[x.cod] || {}).nome || "", series: txt(x.series), dica: txt(x.dica)}));
+    try { const j = await chamar({acao: "t_along_salvar", aluno: a.chave, lista}, 60000);
+      d.along = j.along; DADOS[a.chave] = d; guardar("t_aluno:" + a.chave, d); delete ALONG_ED[a.chave]; pintarAlongTr(a); }
+    catch(e){ b.disabled = false; $("alMsg").textContent = e.servidor ? "Não salvou: " + e.message : "Sem internet: não salvou. Tente de novo com sinal."; }
   };
 }
 
@@ -501,7 +578,7 @@ async function carregarAluno(a, depois){
   else corpo.innerHTML = `<p class="carregando">Abrindo a planilha de ${esc(primeiro(a.nome))}…</p>`;
   try {
     const d = await chamar({acao: "t_aluno", aluno: a.chave});
-    const mudou = !guardado || JSON.stringify([d.treino, d.reg, d.cardio, d.avaliacao, d.grupos, d.prescricao]) !== JSON.stringify([guardado.treino, guardado.reg, guardado.cardio, guardado.avaliacao, guardado.grupos, guardado.prescricao]);
+    const mudou = !guardado || JSON.stringify([d.treino, d.reg, d.cardio, d.avaliacao, d.grupos, d.prescricao, d.along]) !== JSON.stringify([guardado.treino, guardado.reg, guardado.cardio, guardado.avaliacao, guardado.grupos, guardado.prescricao, guardado.along]);
     DADOS[a.chave] = d; guardar("t_aluno:" + a.chave, d);
     const r = rota(); if (r.tela !== "a" || r.chave !== a.chave) return;
     if (mudou){ const foco = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName); if (!foco) depois(); else precisaRender = true; }

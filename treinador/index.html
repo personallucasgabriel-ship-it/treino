@@ -298,6 +298,18 @@ nav.baixo a{padding:9px 4px;font-size:13px}
 .avex{margin-top:8px;border-left:3px solid var(--linha);padding:4px 0 4px 10px;display:flex;flex-direction:column;gap:2px;font-size:14px}
 .avex small{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--cinza)}
 .card.alerta{border-color:var(--amarelo)}
+.along-dias{display:grid;grid-template-columns:repeat(14,1fr);gap:4px;margin-bottom:8px}
+.along-dias span{aspect-ratio:1;border-radius:4px;background:var(--carvao2);border:1px solid var(--linha)}
+.along-dias span.sim{background:var(--verde);border-color:var(--verde)}
+.along-dias span.hoje{outline:2px solid var(--amarelo);outline-offset:1px}
+.along-item{display:flex;gap:10px;align-items:center}
+.along-item img,.along-item .along-sem,.along-op img,.along-op .along-sem{width:48px;height:64px;object-fit:cover;border-radius:6px;background:#fff;flex:none}
+.along-item small{display:block;color:var(--cinza);font-size:12px}
+.along-ed{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.along-opcoes{display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:420px;overflow:auto}
+.along-op{display:flex;gap:10px;align-items:center;text-align:left;background:var(--preto);border:1px solid var(--linha);border-radius:10px;padding:6px;color:var(--branco);font:inherit;font-size:14px}
+.along-op span{flex:1;min-width:0}.along-op small{display:block;color:var(--cinza);font-size:12px}
+.along-op b{color:var(--amarelo);font-size:20px;padding:0 8px}
 .refeicao{margin-bottom:10px}
 .refeicao .ref-tit{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .refeicao h3{margin:0;font-size:16px}

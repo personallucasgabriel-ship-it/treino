@@ -146,6 +146,7 @@ function montarDados(raw){
   P.fotosEm = raw.fotos_em ? new Date(raw.fotos_em + "T12:00:00") : null;
   P.versao = Number(raw.versao) || 0;
   P.plano = raw.plano || null; P.dieta = !!raw.dieta;   // servidor versão 15: aviso de renovação e sugestão alimentar
+  P.along = raw.along && (raw.along.lista || []).length ? {lista: raw.along.lista, feitos: (raw.along.feitos || []).slice()} : null;   // versão 24
   P.abas = abasDaSemana();
   P.reg = {}; Object.keys(raw.reg||{}).forEach(L => { P.reg[L] = (raw.reg[L]||[]).map(r => r.slice()); });
   P.cardio = {}; (raw.cardio||[]).forEach(r => { const s = Number(r[0]), d = txt(r[1]); if (s && d) P.cardio[s+"|"+d] = {minutos: lerPlanilha(r[4]), bpm: lerPlanilha(r[5]), recado: txt(r[6])}; });
@@ -161,6 +162,8 @@ function aplicarOp(op){
       if (op.pse) for (let s = 1; s <= 5; s++){ const v = (op.pse[i]||[])[s-1]; atual[COL_PSE+s] = v === "" || v == null ? "" : String(v); } });
   } else if (op.tipo === "cardio"){
     P.cardio[op.semana+"|"+op.dia] = {minutos: op.minutos, bpm: op.bpm, recado: op.recado};
+  } else if (op.tipo === "along" && P.along){
+    P.along.feitos = P.along.feitos.filter(d => d !== op.data); if (op.feito) P.along.feitos.push(op.data);
   }
 }
 
@@ -337,7 +340,7 @@ function opCardio(d){
   return {tipo: "cardio", semana: semanaN, dia: d.dia, data: dt ? ddaaaa(dt) : "", prescrito: d.cardio, minutos: c.minutos ?? "", bpm: c.bpm ?? "", recado: c.recado || ""};
 }
 function enfileirar(op){
-  const chave = op.tipo === "treino" ? `t|${op.aba}|${op.semana}` : `c|${op.semana}|${op.dia}`;
+  const chave = op.tipo === "treino" ? `t|${op.aba}|${op.semana}` : op.tipo === "along" ? `a|${op.data}` : `c|${op.semana}|${op.dia}`;
   op.v = Date.now() + Math.random(); op.chave = chave; FILA[chave] = op;
   const ok = guardar(K_FILA, FILA);
   mostrarStatus(ok ? "local" : "erro");
@@ -987,12 +990,84 @@ async function mostrarDieta(){
   finally { dietaLendo = false; }
 }
 
+// ---------- alongamentos (servidor versão 24; pedido do criador, 26/11/2026) ----------
+// A lista do aluno vem da aba Alongamentos do Protocolo (P.along.lista: [código, séries e tempo, dica]); os textos e as fotos,
+// do site (alongamentos/lista.json, feito pelo app/gerar-alongamentos.py com a mesma fonte dos slides do Protocolo de alongamentos).
+// "Fiz hoje" vai para a aba Alongamentos feitos pela fila de sempre (funciona sem internet).
+let BIB_ALONG = null, bibLendo = false;
+const K_BIB = "along-bib";
+async function lerBibAlong(){
+  if (BIB_ALONG || bibLendo) return; bibLendo = true;
+  try { const r = await fetch("alongamentos/lista.json", {cache: "no-cache"}); if (!r.ok) throw new Error(); BIB_ALONG = await r.json(); guardar(K_BIB, BIB_ALONG); }
+  catch(e){ BIB_ALONG = ler(K_BIB); }
+  finally { bibLendo = false; }
+}
+// "2 x 15 segundos", "3x30s", "1 x 1 minuto" → {series, seg}
+function lerSeries(t){
+  const m = /(\d+)\s*[x×]\s*(\d+)\s*(min|m\b|minutos?)?/i.exec(t || "");
+  return m ? {series: +m[1], seg: +m[2] * (m[3] ? 60 : 1)} : null;
+}
+const ALONG_T = {};   // cronômetro de cada alongamento: {feitas, fim, tick}
+function mostrarAlong(){
+  const c = $("alongCorpo"); if (!P.along){ c.innerHTML = ""; return; }
+  if (!BIB_ALONG){ c.innerHTML = `<p class="carregando">Abrindo os seus alongamentos…</p>`; lerBibAlong().then(() => { if (abaAtual() === "alongar") pintarAlong(); }); return; }
+  pintarAlong();
+}
+function pintarAlong(){
+  const c = $("alongCorpo"), bib = {}, hoje = ddaaaa(hojeZero());
+  if (!BIB_ALONG){ c.innerHTML = `<p class="nota">Sem internet: na primeira vez, os alongamentos precisam de internet para abrir. Depois ficam no celular.</p>`; return; }
+  BIB_ALONG.alongamentos.forEach(e => bib[e.cod] = e);
+  const feitos = new Set(P.along.feitos), fez = feitos.has(hoje);
+  const semana = [...Array(7)].map((_, i) => { const d = new Date(hojeZero()); d.setDate(d.getDate() - 6 + i); return d; });
+  let h = `<div class="aviso-card${fez ? " ok" : ""}"><h3>${fez ? "Alongamentos de hoje feitos ✓" : "Alongou hoje?"}</h3>
+    <div class="along-semana" aria-label="Últimos 7 dias">${semana.map(d => `<span class="${feitos.has(ddaaaa(d)) ? "sim" : ""}" title="${dd(d)}">${"DSTQQSS"[d.getDay()]}</span>`).join("")}</div>
+    <div class="acoes"><button class="btn${fez ? "" : " amarelo"}" type="button" id="fizHoje">${fez ? "Desmarcar" : "✓ Fiz hoje"}</button></div></div>`;
+  h += `<details class="como along-como"><summary>Como fazer os alongamentos</summary>${(BIB_ALONG.como_fazer || []).map(([t, x]) => `<p class="nota"><b>${esc(t)}:</b> ${esc(x)}</p>`).join("")}</details>`;
+  P.along.lista.forEach(([cod, series, dica], i) => {
+    const e = bib[cod]; if (!e) return;
+    const sr = lerSeries(series), t = ALONG_T[i] || {};
+    const d = txt(dica) || e.dica || "";
+    h += `<article class="along" id="al-${i}"><div class="along-cab"><span class="along-n">${i + 1}</span><div><h3>${esc(e.nome)}</h3>${series ? `<small>${esc(series)}</small>` : ""}</div></div>
+      ${e.foto ? `<img src="alongamentos/${esc(e.foto)}" alt="${esc(e.nome)}" loading="lazy" decoding="async">` : ""}
+      ${e.precisa ? `<p class="nota"><b>Precisa:</b> ${esc(e.precisa)}</p>` : ""}
+      <ol>${(e.passos || []).map(p => `<li>${esc(p)}</li>`).join("")}</ol>
+      ${e.sentir ? `<p class="nota"><b>Onde sentir:</b> ${esc(e.sentir)}</p>` : ""}
+      ${d ? `<p class="along-dica"><b>Dica:</b> ${esc(d)}</p>` : ""}
+      ${sr ? `<button class="btn along-cron${t.feitas >= sr.series ? " tem" : ""}" type="button" data-i="${i}">${rotuloCron(i, sr)}</button>` : ""}</article>`;
+  });
+  h += `<p class="nota">Sentiu dor, formigamento ou tontura? Pare e me avise.</p>`;
+  c.innerHTML = h;
+  $("fizHoje").onclick = () => { const marcar = !feitos.has(hoje); const op = {tipo: "along", data: hoje, feito: marcar}; aplicarOp(op); enfileirar(op); if (marcar) try { navigator.vibrate && navigator.vibrate(60); } catch(e){} pintarAlong(); };
+  c.querySelectorAll(".along-cron").forEach(b => b.onclick = () => cronAlong(+b.dataset.i));
+}
+function rotuloCron(i, sr){
+  const t = ALONG_T[i] || {}, feitas = t.feitas || 0;
+  if (t.tick) return `⏱ ${Math.max(0, Math.ceil((t.fim - Date.now()) / 1000))} s · série ${feitas + 1} de ${sr.series}`;
+  if (feitas >= sr.series) return `✓ ${sr.series} de ${sr.series} feitas · de novo`;
+  return feitas ? `▶ Série ${feitas + 1} de ${sr.series} (${sr.seg} s)` : `▶ Começar: ${sr.seg} s`;
+}
+function cronAlong(i){
+  const sr = lerSeries(P.along.lista[i][1]); if (!sr) return;
+  const t = ALONG_T[i] || (ALONG_T[i] = {feitas: 0});
+  const btn = () => document.querySelector(`.along-cron[data-i="${i}"]`);
+  if (t.tick){ clearInterval(t.tick); t.tick = null; const b = btn(); if (b) b.textContent = rotuloCron(i, sr); return; }   // tocar de novo para
+  if (t.feitas >= sr.series) t.feitas = 0;
+  try { ctx ||= new (window.AudioContext || window.webkitAudioContext)(); ctx.resume && ctx.resume(); } catch(e){}
+  t.fim = Date.now() + sr.seg * 1000; manterTela(true);
+  const passoA = () => {
+    const b = btn();
+    if (Date.now() >= t.fim){ clearInterval(t.tick); t.tick = null; t.feitas++; bip(); if (b){ b.textContent = rotuloCron(i, sr); b.classList.toggle("tem", t.feitas >= sr.series); } setTimeout(() => { if (!Object.values(ALONG_T).some(x => x.tick)) manterTela(false); }, 30000); return; }
+    if (b) b.textContent = rotuloCron(i, sr);
+  };
+  t.tick = setInterval(passoA, 250); passoA();
+}
+
 // ---------- abas embaixo (pedido do criador, 15/11/2026): Treino, Evolução e Alimentação (só com a sugestão alimentar liberada) ----------
-const ABAS = [["treino", "🏋️", "Treino"], ["evolucao", "📈", "Evolução"], ["alimentacao", "🍽️", "Alimentação"]];
-const abaAtual = () => { const h = location.hash.replace("#", ""); return h === "evolucao" || (h === "alimentacao" && P && P.dieta) ? h : "treino"; };
+const ABAS = [["treino", "🏋️", "Treino"], ["alongar", "🧘", "Alongar"], ["evolucao", "📈", "Evolução"], ["alimentacao", "🍽️", "Alimentação"]];
+const abaAtual = () => { const h = location.hash.replace("#", ""); return h === "evolucao" || (h === "alimentacao" && P && P.dieta) || (h === "alongar" && P && P.along) ? h : "treino"; };
 function pintarNav(){
   const nav = $("abas"); if (!P){ nav.hidden = true; return; }
-  const a = abaAtual(), lista = ABAS.filter(([k]) => k !== "alimentacao" || P.dieta);
+  const a = abaAtual(), lista = ABAS.filter(([k]) => (k !== "alimentacao" || P.dieta) && (k !== "alongar" || P.along));
   nav.innerHTML = lista.map(([k, ic, t]) => `<a href="#${k}" aria-current="${k === a ? "page" : "false"}"><span aria-hidden="true">${ic}</span>${t}</a>`).join("");
   nav.hidden = false;
 }
@@ -1002,10 +1077,10 @@ function aplicarAba(){
   const a = abaAtual(), tr = a === "treino";
   ["meta", "avisos", "dias", "tela"].forEach(id => $(id).hidden = !tr);
   if (!tr) $("envio").hidden = true;
-  $("evolucao").hidden = a !== "evolucao"; $("dieta").hidden = a !== "alimentacao";
+  $("evolucao").hidden = a !== "evolucao"; $("dieta").hidden = a !== "alimentacao"; $("along").hidden = a !== "alongar";
   pintarNav();
   if (a !== abaMostrada){ abaMostrada = a; scrollTo(0, 0);
-    if (a === "evolucao") mostrarEvolucao(); else if (a === "alimentacao") mostrarDieta(); }
+    if (a === "evolucao") mostrarEvolucao(); else if (a === "alimentacao") mostrarDieta(); else if (a === "alongar") mostrarAlong(); }
 }
 window.addEventListener("hashchange", aplicarAba);
 
@@ -1195,6 +1270,7 @@ async function atualizar(){
     else if (P && naoLidos().length !== novosAntes) avisos();
     else if (nova !== assinatura){ const foco = document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
       if (foco){ montarDados(raw); precisaRender = true; } else mostrar(raw, false); }
+    if (P && JSON.stringify((raw.along || {}).lista || []) !== JSON.stringify((P.along || {}).lista || [])){ montarDados(raw); aplicarAba(); if (abaAtual() === "alongar") mostrarAlong(); }
     if (P && (!!raw.dieta !== P.dieta || JSON.stringify(raw.plano || null) !== JSON.stringify(P.plano))){ P.dieta = !!raw.dieta; P.plano = raw.plano || null; avisos(); aplicarAba(); }
     assinatura = nova; mostrarStatus(Object.keys(FILA).length ? "local" : "ok");
     buscarComoFazer();

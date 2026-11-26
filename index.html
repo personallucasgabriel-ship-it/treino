@@ -69,6 +69,19 @@ h1{font-family:var(--f-titulo);font-weight:900;font-size:32px;line-height:1;marg
 .aviso-card p{margin:0;font-size:14px;color:#D9D8D2}
 .aviso-card .acoes{margin-top:4px}
 .aviso-card.ok{border-left-color:var(--verde)}
+.along-semana{display:flex;gap:6px}
+.along-semana span{width:28px;height:28px;border-radius:50%;border:1px solid var(--linha);display:grid;place-items:center;font-size:12px;color:var(--cinza)}
+.along-semana span.sim{background:var(--verde);border-color:var(--verde);color:var(--preto);font-weight:700}
+.along{background:var(--preto);border:1px solid var(--linha);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.along-cab{display:flex;gap:10px;align-items:flex-start}
+.along-cab h3{margin:0;font-size:16px}
+.along-cab small{color:var(--amarelo);font-weight:600}
+.along-n{flex:none;width:26px;height:26px;border-radius:50%;background:var(--amarelo);color:var(--preto);font-weight:800;display:grid;place-items:center;font-size:13px}
+.along img{width:100%;max-width:360px;max-height:380px;object-fit:contain;align-self:center;border-radius:10px;background:#fff}
+.along ol{margin:0;padding-left:20px;font-size:14px;display:flex;flex-direction:column;gap:4px}
+.along-dica{margin:0;font-size:14px;border-left:3px solid var(--amarelo);padding-left:8px}
+.along-cron{align-self:flex-start;font-size:14px;padding:9px 14px}
+.along-como summary{cursor:pointer;font-weight:600}
 
 .tit-dia{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-transform:uppercase}
@@ -281,6 +294,10 @@ h2{font-family:var(--f-titulo);font-weight:800;font-size:22px;margin:0;text-tran
   <section class="resumo plano" id="evolucao" hidden>
     <h2>Minha evolução</h2>
     <div id="evoCorpo"></div>
+  </section>
+  <section class="resumo plano" id="along" hidden>
+    <h2>Alongamentos</h2>
+    <div id="alongCorpo" style="display:flex;flex-direction:column;gap:12px"></div>
   </section>
   <section class="resumo plano" id="dieta" hidden>
     <h2>Sugestão alimentar</h2>
