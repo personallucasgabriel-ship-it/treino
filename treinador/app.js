@@ -301,7 +301,7 @@ function telaAluno(chave, aba){
   const a = alunoPorChave(chave);
   if (!a){ $("tela").innerHTML = `<a class="voltar" href="#/alunos">‹ Alunos</a><div class="card"><h2>Aluno não encontrado</h2><p class="sub">Ele pode ter ido para Inativos. Toque em ↻ para ler o Drive de novo.</p></div>`; return; }
   const [nivel, frase] = situacao(a);
-  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []).concat(temProto && a.modelo === "novo" && (INICIO.versao || 0) >= PRESC_DESDE ? [["treino","Treino"]] : []).concat([["avaliacao","Avaliação"]]);
+  const temProto = !!a.protocolo, abas = [["resumo","Resumo"],["evolucao","Evolução"]].concat(temProto ? [["registrar","Registrar"]] : []).concat(temProto && a.modelo === "novo" && (INICIO.versao || 0) >= PRESC_DESDE ? [["treino","Treino"]] : []).concat([["avaliacao","Avaliação"],["dieta","Dieta"]]);
   if (!abas.some(x => x[0] === aba)) aba = "resumo";
   let h = `<a class="voltar" href="#/alunos">‹ Alunos</a>
     <div><div class="eyebrow">${a.modalidade === "presencial" ? "Presencial" : "Consultoria online"}</div><h1>${esc(a.nome)}</h1></div>
@@ -311,6 +311,7 @@ function telaAluno(chave, aba){
     <div id="corpo" class="wrap" style="width:100%"></div>`;
   $("tela").innerHTML = h;
   if (aba === "resumo") resumoAluno(a);
+  else if (aba === "dieta") dietaAluno(a);
   else carregarAluno(a, () => abrirAba(a, aba));
 }
 function abrirAba(a, aba){ if (aba === "evolucao") evolucaoAluno(a); else if (aba === "treino") prescricaoAluno(a); else if (aba === "avaliacao") avaliacaoAluno(a); else registrarAluno(a); }
@@ -347,7 +348,7 @@ function resumoAluno(a){
   const links = [];
   if (a.planilha) links.push(`<a class="btn amarelo" href="${esc(a.planilha)}" target="_blank" rel="noopener">Planilha de treino</a>`);
   if (a.avaliacao) links.push(`<a class="btn" href="https://docs.google.com/spreadsheets/d/${esc(a.avaliacao)}/edit" target="_blank" rel="noopener">Avaliação física</a>`);
-  if (a.calculos) links.push(`<a class="btn" href="${esc(a.calculos)}" target="_blank" rel="noopener">Cálculos metabólicos</a>`);
+  if (a.calculos) links.push(`<a class="btn" href="${esc(a.calculos)}" target="_blank" rel="noopener">Cálculos metabólicos</a>`, `<a class="btn" href="#/a/${a.chave}/dieta">Ver a dieta</a>`);
   if (a.pasta) links.push(`<a class="btn" href="${esc(a.pasta)}" target="_blank" rel="noopener">Pasta no Drive</a>`);
   if (a.app) links.push(`<a class="btn" href="${esc(a.app)}" target="_blank" rel="noopener">App do aluno</a>`);
   h += `<div class="acoes">${links.join("")}</div>`;
@@ -368,15 +369,6 @@ function resumoAluno(a){
   if (rec.length) h += `<section class="secao"><header><h2>Recordes</h2><span class="cont">últimas 4 semanas</span></header><div class="card">${rec.slice().reverse().map(x =>
       `<div class="recado"><small>Semana ${x.semana} · ${esc(x.exercicio)}</small>🏆 ${esc(txtRec(x.texto) || `${x.exercicio}: ${fmt(x.kg)} kg × ${x.reps}`)}</div>`).join("")}</div></section>`;
   if (a.lido_planilha_erro) h += `<p class="sub">${esc(a.lido_planilha_erro)}</p>`;
-  // sugestão alimentar no app do aluno (servidor versão 15; pedido do criador): só com o ok do treinador e sem nutricionista
-  if (a.app && (INICIO.versao || 0) >= 15){
-    const tem = a.nutri === "Sim";
-    h += `<section class="secao"><header><h2>Sugestão alimentar no app</h2><span class="cont">${a.dieta_app ? "aparece no app" : "não aparece"}</span></header><div class="card">
-      <p class="sub">${tem ? "Na anamnese, este aluno disse que faz acompanhamento com nutricionista: a sugestão alimentar não vai para o app dele."
-        : a.dieta_app ? `O cardápio da aba Cardápio aparece no app de ${esc(primeiro(a.nome))}, no botão "Sugestão alimentar". Mudou o cardápio? Ele vê o novo em até 30 minutos.`
-        : `Para o aluno que quis a sugestão alimentar e não tem nutricionista. Antes, monte e aprove o cardápio comigo no chat ("monta a dieta de ${esc(primeiro(a.nome))}").${a.nutri ? "" : " A anamnese não diz se ele tem nutricionista: confira antes."}`}</p>
-      <p class="sub" id="dietaMsg"></p>${tem ? "" : `<div class="acoes"><button class="btn${a.dieta_app ? "" : " amarelo"}" type="button" id="dietaApp">${a.dieta_app ? "Tirar do app do aluno" : "Mostrar no app do aluno"}</button></div>`}</div></section>`;
-  }
   if (a.app && (INICIO.versao || 0) >= 17) h += secaoAvisoAluno(a);
   h += `<section class="secao" id="inatSecao"><header><h2>Aluno parou?</h2></header><div class="card">
     <p class="sub">Leva a pasta para Inativos, o contrato para Contratos Inativos e desliga o app do aluno. Nada é apagado: se ele voltar, me diga no chat "${esc(primeiro(a.nome))} voltou".</p>
@@ -384,15 +376,104 @@ function resumoAluno(a){
   $("corpo").innerHTML = h;
   $("inativar").onclick = () => inativarAluno(a);
   ligarFormAviso("avA", t => ({acao: "t_aviso", aluno: a.chave, ...t}), j => j.depois ? "Guardado ✓ Sai às 7h (de noite, nada vai para o celular)." : j.aparelhos ? `Mandado ✓ Chegou em ${plural(j.aparelhos, "celular")}.` : `Guardado ✓ ${primeiro(a.nome)} não ligou os avisos no celular: vê no 🔔 quando abrir o app.`);
-  if ($("dietaApp")) $("dietaApp").onclick = async () => {
-    const ligar = !a.dieta_app, b = $("dietaApp"); b.disabled = true; $("dietaMsg").textContent = ligar ? "Conferindo o cardápio…" : "Tirando…";
-    try { await chamar({acao: "t_dieta_app", aluno: a.chave, ligar}, 60000); a.dieta_app = ligar; guardar("t_inicio", INICIO); resumoAluno(a); }
-    catch(e){ b.disabled = false; $("dietaMsg").textContent = e.servidor ? e.message : "Sem internet: tente de novo com sinal."; }
-  };
   $("salvarAnot").onclick = async () => {
     const t = $("anot").value; $("anotMsg").textContent = "Salvando…";
     try { await chamar({acao: "t_nota", aluno: a.chave, nome: a.nome, texto: t}); a.anotacao = t; guardar("t_inicio", INICIO); $("anotMsg").textContent = "Salvo ✓"; }
     catch(e){ $("anotMsg").textContent = e.servidor ? "Não salvou: " + e.message : "Sem internet: não salvou. Tente de novo com sinal."; }
+  };
+}
+
+// ---------- aba Dieta (servidor versão 23; pedido do criador, 26/11/2026: ver a dieta do aluno no app do treinador) ----------
+// Lê a aba Cardápio do "Calculos metabólicos para <Nome>" (ação t_dieta, a mesma leitura do app do aluno, lerCardapio_ em Treinador.gs).
+// Só mostra: mudar o cardápio continua no chat (skill nutricionista), para as contas da planilha continuarem certas.
+const DIETA_DESDE = 23, DIETAS = {}, DIETA_ERRO = {}, DIETA_LENDO = {};
+const PLURAL_DIETA = {"unidade": "unidades", "fatia": "fatias", "colher de sopa": "colheres de sopa", "colher de chá": "colheres de chá", "pote": "potes",
+  "scoop": "scoops", "copo": "copos", "xícara": "xícaras", "lata": "latas", "porção": "porções"};   // igual ao app do aluno (../app.js) e ao dieta_pdf.py
+function qtdDieta(q, m){ q = txt(q); m = txt(m); if (!q) return ""; if (m === "g" || m === "ml") return `${q} ${m}`;
+  const n = lerPlanilha(q); return `${q} ${n !== "" && n >= 2 ? (PLURAL_DIETA[m] || m) : m}`.trim(); }
+const numDieta = v => lerPlanilha(txt(v).replace(/[^\d,.\-]/g, ""));
+// meta × cardápio: calorias com folga de 5%, macros de 10% (fora disso, o app avisa)
+const MACROS_DIETA = [["kcal", "Calorias", "kcal", .05], ["proteina", "Proteína", "g", .1], ["carboidrato", "Carboidrato", "g", .1], ["gordura", "Gordura", "g", .1], ["fibra", "Fibra", "g", .15]];
+function comparaDieta(d){
+  return MACROS_DIETA.map(([k, nome, un, folga]) => {
+    const m = numDieta((d.meta || {})[k]), c = numDieta((d.cardapio || {})[k]);
+    if (m === "" && c === "") return null;
+    const dif = m !== "" && c !== "" ? c - m : null, longe = dif != null && m > 0 && Math.abs(dif) > m * folga;
+    return {k, nome, un, meta: m, card: c, dif, longe};
+  }).filter(Boolean);
+}
+async function lerDietaAluno(a){
+  if (DIETA_LENDO[a.chave]) return; DIETA_LENDO[a.chave] = true; delete DIETA_ERRO[a.chave];
+  try { const j = await chamar({acao: "t_dieta", aluno: a.chave}, 60000); DIETAS[a.chave] = j; guardar("t_dieta:" + a.chave, j); }
+  catch(e){ DIETA_ERRO[a.chave] = e.servidor ? e.message : "Sem internet: mostrando o que já estava guardado no celular."; }
+  finally { DIETA_LENDO[a.chave] = false; }
+  const r = rota(); if (r.tela === "a" && r.chave === a.chave && r.aba === "dieta") pintarDieta(a);
+}
+function dietaAluno(a){
+  if (!DIETAS[a.chave]) DIETAS[a.chave] = ler("t_dieta:" + a.chave);
+  pintarDieta(a);
+  if ((INICIO.versao || 0) >= DIETA_DESDE) lerDietaAluno(a);
+}
+function pintarDieta(a){
+  const el = $("corpo"); if (!el) return;
+  const j = DIETAS[a.chave], erro = DIETA_ERRO[a.chave], nome = esc(primeiro(a.nome));
+  let h = "";
+  if ((INICIO.versao || 0) < DIETA_DESDE) h += `<div class="card alerta"><p class="sub">Para ver a dieta aqui, cole o código novo do servidor (página Ligar o app do treinador, versão ${DIETA_DESDE}) e toque em ↻.</p></div>`;
+  else if (!j) h += `<div class="card"><p class="${erro ? "sub" : "carregando"}">${esc(erro || `Abrindo a dieta de ${primeiro(a.nome)}…`)}</p>${erro ? `<div class="acoes"><button class="btn" type="button" id="dietaDeNovo">Tentar de novo</button></div>` : ""}</div>`;
+  else {
+    const d = j.dieta, tem = d && d.refeicoes && d.refeicoes.length;
+    // situação
+    const st = [];
+    st.push(tem ? `✓ Cardápio montado${txt(d.data) ? ` (${esc(d.data)})` : ""}` : "✗ O cardápio ainda não foi montado");
+    if (a.app) st.push(a.dieta_app ? "✓ Aparece no app do aluno" : "• Não aparece no app do aluno");
+    st.push(j.nutri === "Sim" ? "⚠ Na anamnese, disse que tem nutricionista" : j.nutri === "Não" ? "✓ Sem nutricionista (anamnese)" : "• A anamnese não diz se tem nutricionista");
+    h += `<div class="card">${st.map(x => `<p class="sub" style="margin:2px 0">${x}</p>`).join("")}
+      <div class="acoes">${tem ? `<button class="btn amarelo" type="button" id="pdfDieta">PDF da dieta</button>` : ""}${j.calculos ? `<a class="btn" href="${esc(j.calculos)}" target="_blank" rel="noopener">Abrir a planilha</a>` : ""}<button class="btn" type="button" id="dietaDeNovo">↻ Ler de novo</button></div>
+      ${!j.calculos ? `<p class="sub">Não achei a planilha "Calculos metabólicos" na pasta de ${nome}.</p>` : ""}${j.erro ? `<p class="sub">${esc(j.erro)}</p>` : ""}${erro ? `<p class="sub">${esc(erro)}</p>` : ""}</div>`;
+    if (!tem) h += `<div class="card"><p class="vazio">Para montar, me peça no chat: "monta a dieta de ${nome}".</p></div>`;
+    else {
+      const cmp = comparaDieta(d), longe = cmp.filter(x => x.longe);
+      h += `<section class="secao"><header><h2>Meta × cardápio</h2><span class="cont">por dia</span></header><div class="fatos">${cmp.map(x =>
+        `<div class="fato"><small>${x.nome}</small><b>${x.card === "" ? "—" : fmt(x.card) + " " + x.un}</b><span>meta ${x.meta === "" ? "—" : fmt(x.meta) + " " + x.un}${x.dif == null ? "" : ` · <b style="display:inline;font-size:12px;color:var(${x.longe ? "--laranja" : "--verde"})">${x.dif > 0 ? "+" : ""}${fmt(Math.round(x.dif))}</b>`}</span></div>`).join("")}</div>
+        ${longe.length ? `<p class="sub">⚠ Longe da meta: ${longe.map(x => x.nome.toLowerCase()).join(", ")}. Para ajustar, me peça no chat: "ajusta a dieta de ${nome}".</p>` : cmp.some(x => x.dif != null) ? `<p class="sub">✓ O cardápio fecha a meta.</p>` : ""}
+        ${txt((d.meta || {}).agua) ? `<p class="sub">Água: ${esc(d.meta.agua)} por dia.</p>` : ""}</section>`;
+      h += `<section class="secao"><header><h2>Refeições</h2><span class="cont">${plural(d.refeicoes.length, "refeição", "refeições")}</span></header>${d.refeicoes.map(r =>
+        `<div class="card refeicao"><div class="ref-tit"><h3>${esc(r.nome)}</h3>${txt((r.total || {}).kcal) ? `<span class="sub">${esc(r.total.kcal)} kcal${txt(r.total.proteina) ? ` · ${esc(r.total.proteina)} g prot` : ""}</span>` : ""}</div>
+          <ul>${r.itens.map(i => `<li><span>${esc(i.alimento)}</span><b>${esc(qtdDieta(i.quantidade, i.medida))}</b>${i.obs ? `<small>${esc(i.obs)}</small>` : ""}</li>`).join("")}</ul></div>`).join("")}</section>`;
+      if (d.suplementos.length) h += `<section class="secao"><header><h2>Suplementação</h2></header><div class="card">${d.suplementos.map(x => `<div class="recado"><b>${esc(x.nome)}</b>${x.dose ? ` · ${esc(x.dose)}` : ""}${x.uso ? `<small style="display:block">${esc(x.uso)}</small>` : ""}</div>`).join("")}</div></section>`;
+      const tr = trocasDieta(d);
+      if (tr.length) h += `<section class="secao"><header><h2>Trocas</h2></header><div class="card">${tr.map(t => `<div class="recado"><b>${esc(t.de)}</b> pode trocar por:<small style="display:block">${t.itens.map(esc).join(" · ")}</small></div>`).join("")}</div></section>`;
+      if (d.observacoes.length) h += `<section class="secao"><header><h2>Observações para o aluno</h2></header><div class="card">${d.observacoes.map(o => `<p class="sub">${esc(o)}</p>`).join("")}</div></section>`;
+      h += `<p class="sub">Para mudar o cardápio, me peça no chat ("ajusta a dieta de ${nome}"): as contas ficam na planilha.</p>`;
+    }
+  }
+  h += secaoDietaApp(a);
+  el.innerHTML = h;
+  if ($("dietaDeNovo")) $("dietaDeNovo").onclick = () => { if (!j) { delete DIETA_ERRO[a.chave]; pintarDieta(a); } else $("dietaDeNovo").textContent = "Lendo…"; lerDietaAluno(a); };
+  botaoPdf($("pdfDieta"), () => pdfDieta(a));
+  ligarDietaApp(a);
+}
+function trocasDieta(d){
+  const por = {}, ordem = [];
+  (d.trocas || []).forEach(t => { const k = `${qtdDieta(t.qtd_de, t.med_de)} de ${t.de}`;
+    if (!por[k]){ por[k] = []; ordem.push(k); } por[k].push(`${qtdDieta(t.qtd_para, t.med_para)} de ${t.para}`); });
+  return ordem.map(k => ({de: k, itens: por[k]}));
+}
+// mostrar ou não no app do aluno (servidor versão 15): só com o ok do treinador e sem nutricionista
+function secaoDietaApp(a){
+  if (!a.app || (INICIO.versao || 0) < 15) return "";
+  const tem = a.nutri === "Sim";
+  return `<section class="secao"><header><h2>Sugestão alimentar no app</h2><span class="cont">${a.dieta_app ? "aparece no app" : "não aparece"}</span></header><div class="card">
+    <p class="sub">${tem ? "Na anamnese, este aluno disse que faz acompanhamento com nutricionista: a sugestão alimentar não vai para o app dele."
+      : a.dieta_app ? `O cardápio da aba Cardápio aparece no app de ${esc(primeiro(a.nome))}, no botão "Sugestão alimentar". Mudou o cardápio? Ele vê o novo em até 30 minutos.`
+      : `Para o aluno que quis a sugestão alimentar e não tem nutricionista. Antes, monte e aprove o cardápio comigo no chat ("monta a dieta de ${esc(primeiro(a.nome))}").${a.nutri ? "" : " A anamnese não diz se ele tem nutricionista: confira antes."}`}</p>
+    <p class="sub" id="dietaMsg"></p>${tem ? "" : `<div class="acoes"><button class="btn${a.dieta_app ? "" : " amarelo"}" type="button" id="dietaApp">${a.dieta_app ? "Tirar do app do aluno" : "Mostrar no app do aluno"}</button></div>`}</div></section>`;
+}
+function ligarDietaApp(a){
+  if ($("dietaApp")) $("dietaApp").onclick = async () => {
+    const ligar = !a.dieta_app, b = $("dietaApp"); b.disabled = true; $("dietaMsg").textContent = ligar ? "Conferindo o cardápio…" : "Tirando…";
+    try { await chamar({acao: "t_dieta_app", aluno: a.chave, ligar}, 60000); a.dieta_app = ligar; guardar("t_inicio", INICIO); pintarDieta(a); }
+    catch(e){ b.disabled = false; $("dietaMsg").textContent = e.servidor ? e.message : "Sem internet: tente de novo com sinal."; }
   };
 }
 

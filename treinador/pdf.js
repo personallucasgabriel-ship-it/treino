@@ -261,6 +261,28 @@ async function pdfAvaliacao(a){
   return R.fim(`Avaliação física ${a.nome} ${isoDe(hojeZero())}`);
 }
 
+// ---------- 4. dieta (aba Dieta; a aba Cardápio do "Calculos metabólicos", servidor versão 23) ----------
+// O PDF oficial, que fica na pasta do aluno, continua com a skill nutricionista (dieta_pdf.py); este é o do celular, para mandar na hora.
+async function pdfDieta(a){
+  const j = DIETAS[a.chave], d = j && j.dieta;
+  if (!d || !d.refeicoes || !d.refeicoes.length) throw new Error("O cardápio deste aluno ainda não foi montado.");
+  const R = await novoPdf("Sugestão alimentar", "Alimentação", a.nome, txt(d.data) ? `Cardápio de ${txt(d.data)}` : "");
+  const c = d.cardapio || {};
+  R.cartoes([["kcal", "Calorias", " kcal"], ["proteina", "Proteína", " g"], ["carboidrato", "Carboidrato", " g"], ["gordura", "Gordura", " g"]]
+    .map(([k, rot, un]) => txt(c[k]) ? [rot, txt(c[k]) + un, "por dia"] : null));
+  if (txt((d.meta || {}).agua)) R.p(`Água: ${txt(d.meta.agua)} por dia.`, 9.5, COR.texto);
+  d.refeicoes.forEach(r => {
+    R.h2(r.nome, txt((r.total || {}).kcal) ? `${txt(r.total.kcal)} kcal` : "");
+    R.tabela(["Alimento", "Quantidade"], r.itens.map(i => [i.alimento + (txt(i.obs) ? ` (${txt(i.obs)})` : ""), qtdDieta(i.quantidade, i.medida)]), [3.2, 1.3]);
+  });
+  if (d.suplementos.length){ R.h2("Suplementação"); d.suplementos.forEach(x => R.p(`${x.nome}${txt(x.dose) ? ` · ${txt(x.dose)}` : ""}${txt(x.uso) ? `: ${txt(x.uso)}` : ""}`, 9.5, COR.texto)); }
+  const tr = trocasDieta(d);
+  if (tr.length){ R.h2("Trocas", "pode trocar por"); tr.forEach(t => R.p(`${t.de}: ${t.itens.join(" · ")}`, 9.5, COR.texto)); }
+  if (d.observacoes.length){ R.h2("Observações"); d.observacoes.forEach(o => R.p(o, 9.5, COR.texto)); }
+  R.p("É uma sugestão feita com as suas metas. Dúvida ou quer trocar algo? Fale comigo.", 8.5);
+  return R.fim(`Sugestão alimentar ${a.nome} ${isoDe(hojeZero())}`);
+}
+
 // ---------- 3. fotos de avaliação, antes × depois (aba Avaliação; as datas escolhidas na tela) ----------
 // Enquadramento igual (pedido do criador, 15/11/2026), a mesma conta de .claude/skills/treinador/scripts/corpo.py:
 // o detector de pose do MediaPipe acha o corpo (alto da cabeça à ponta dos pés) e as duas fotos ficam com o corpo
