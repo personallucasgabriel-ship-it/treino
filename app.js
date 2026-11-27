@@ -1087,7 +1087,7 @@ window.addEventListener("hashchange", aplicarAba);
 // ----- renovação: perto do fim do plano (aba Alunos do Financeiro; só consultoria online) -----
 // Preços e links: ferramentas/vendas/precos-e-oferta.md. Mudou lá, mude aqui.
 const PLANOS_RENOVAR = [
-  ["Mensal", "R$ 197", "https://sun.eduzz.com/39YDQYZQ9O"],
+  ["Mensal", "R$ 197", "https://sun.eduzz.com/39YDQYZQ9O?np=1"],
   ["Trimestral", "R$ 497 ou 3x de R$ 165,67", "https://sun.eduzz.com/2212855?np=3"],
   ["Semestral", "R$ 897 ou 6x de R$ 149,50", "https://sun.eduzz.com/E0D6NXGY91?np=6"]];
 const WHATS_TREINADOR = "5544998093639";
