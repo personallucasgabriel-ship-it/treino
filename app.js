@@ -1088,8 +1088,8 @@ window.addEventListener("hashchange", aplicarAba);
 // Preços e links: ferramentas/vendas/precos-e-oferta.md. Mudou lá, mude aqui.
 const PLANOS_RENOVAR = [
   ["Mensal", "R$ 197", "https://sun.eduzz.com/39YDQYZQ9O"],
-  ["Trimestral", "R$ 497 ou 3x de R$ 165,67", "https://sun.eduzz.com/2212855"],
-  ["Semestral", "R$ 897 ou 6x de R$ 149,50", "https://sun.eduzz.com/E0D6NXGY91"]];
+  ["Trimestral", "R$ 497 ou 3x de R$ 165,67", "https://sun.eduzz.com/2212855?np=3"],
+  ["Semestral", "R$ 897 ou 6x de R$ 149,50", "https://sun.eduzz.com/E0D6NXGY91?np=6"]];
 const WHATS_TREINADOR = "5544998093639";
 function cardRenovar(hoje){
   const p = P.plano; if (!p || !p.fim || /sa[ií]u/i.test(p.situacao || "")) return "";
